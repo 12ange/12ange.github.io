@@ -2,16 +2,16 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>NEWHTMLFILE</title>
+<title>WebSpeechAPIで音声認識：音声→文章の変換結果を返す</title>
 <style>
 #tapzone{ width: 75%; height: 3em; border: 3px ridge silver;}
 #results{ width: 75%; line-height: 1.25em; border: 1px dotted black; margin-top: 1em;}
 </style>
 </head>
 <body>
-<h1>Try WebSpeechAPI/Recognition</h1>
-<div id="tapzone">tap to start/end</div>
-<div id="results"></div>
+<h2>WebSpeechAPIで音声認識：音声→文章の変換結果を返す</h2>
+<div id="tapzone">開始・終了はこのエリアをTAP</div>
+<div id="results">結果はここに表示(毎回上書き)</div>
 <script>
 "use strict";
 const NEW_TAG = tag => document.createElement(tag);
@@ -26,7 +26,7 @@ const xSpeechRecognitionEvent = window.SpeechRecognitionEvent || window.webkitSp
 let timeRecognizing = 0 , isRecognizing = false;
 
 let wsrecog = new xSpeechRecognition();
-wsrecog.lang = "ja"; //ja:日本語。ということはen:英語もある？
+wsrecog.lang = "ja"; //ja:日本語。en:英語もある。
 
 wsrecog.addEventListener("result", evt=>{
 	//音声認識結果イベント。型は xSpeechRecognitionEvent
@@ -39,14 +39,14 @@ wsrecog.addEventListener("result", evt=>{
 	//.result[N][M].transcript が認識結果文
 	//.result[N][M].confidence が信頼度
 	const rcgnList = evt.results;
-	let textResult = `[OK] ${rcgnList.length} results.<br>`;
+	let textResult = `[OK] 認識結果 ${rcgnList.length}件<br>`;
 	for(let i=0; i<rcgnList.length; i++){
 		let altntvs = rcgnList[i];
-		textResult += `result#${i+1}, has ${altntvs.length} alternate(s).&gt;<br>`;
+		textResult += `結果#${i+1}, 選択肢 ${altntvs.length}個&gt;<br>`;
 		for(let j=0; j<altntvs.length; j++){
-			textResult += `#${j+1}; ${altntvs[j].transcript} (${100*altntvs[j].confidence}%)<br>`;
+			textResult += `その${j+1}; ${altntvs[j].transcript} (${100*altntvs[j].confidence}%)<br>`;
 		}
-		textResult += `&lt;result#${i+1}<br>`;
+		textResult += `&lt;結果#${i+1}<br>`;
 	}
 	GET_ID("results").innerHTML = textResult;
 	//console.log(evt.results);
@@ -76,7 +76,7 @@ wsrecog.addEventListener("start", ()=>{
 });
 wsrecog.addEventListener("end", ()=>{
 	isRecognizing = false;
-	GET_ID("tapzone").textContent += `<onEnd=${Date.now()-timeRecognizing}ms>`;
+	GET_ID("tapzone").textContent += `<onEnd=${Date.now()-timeRecognizing}ms> TAPでもう一度`;
 });
 wsrecog.addEventListener("audiostart", ()=>{
 	GET_ID("tapzone").textContent += `<onAudioStart=${Date.now()-timeRecognizing}ms>`;
