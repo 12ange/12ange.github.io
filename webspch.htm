@@ -39,16 +39,16 @@ wsrecog.addEventListener("result", evt=>{
 	//.result[N][M].transcript が認識結果文
 	//.result[N][M].confidence が信頼度
 	const rcgnList = evt.results;
-	let textResult = `[OK] ${rcgnList.length} results.\n`;
+	let textResult = `[OK] ${rcgnList.length} results.<br>`;
 	for(let i=0; i<rcgnList.length; i++){
 		let altntvs = rcgnList[i];
-		textResult += `result#${i+1}, has ${altntvs.length} alternate(s).>\n`;
+		textResult += `result#${i+1}, has ${altntvs.length} alternate(s).&gt;<br>`;
 		for(let j=0; j<altntvs.length; j++){
-			textResult += `#${j+1}> ${altntvs[j].transcript} (${100*altntvs[j].confidence}%)\n`;
+			textResult += `#${j+1}; ${altntvs[j].transcript} (${100*altntvs[j].confidence}%)<br>`;
 		}
-		textResult += `<result#${i+1}>\n`;
+		textResult += `&lt;result#${i+1}<br>`;
 	}
-	GET_ID("results").textContent = textResult;
+	GET_ID("results").innerHTML = textResult;
 	//console.log(evt.results);
 });
 
