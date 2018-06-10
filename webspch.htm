@@ -38,11 +38,13 @@ wsrecog.addEventListener("result", evt=>{
 	//.result[N][M] が認識選択肢。
 	//.result[N][M].transcript が認識結果文
 	//.result[N][M].confidence が信頼度
-	let textResult = `[OK] ${evt.results.length} results.\n`;
-	for(let i=0; i<evt.results.length; i++){
-		textResult += `result#${i+1}, has ${evt.results[i].length} alternate(s).>\n`;
-		for(let j=0; j<evt.results[i].length; j++){
-			textResult += `#${j+1}> ${result[i][j].transcript} (${100*result[i][j].confidence}%)\n`;
+	const rcgnList = evt.results;
+	let textResult = `[OK] ${rcgnList.length} results.\n`;
+	for(let i=0; i<rcgnList.length; i++){
+		let altntvs = rcgnList[i];
+		textResult += `result#${i+1}, has ${altntvs.length} alternate(s).>\n`;
+		for(let j=0; j<altntvs.length; j++){
+			textResult += `#${j+1}> ${altntvs[j].transcript} (${100*altntvs[j].confidence}%)\n`;
 		}
 		textResult += `<result#${i+1}>\n`;
 	}
