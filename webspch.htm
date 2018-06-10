@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <title>NEWHTMLFILE</title>
 <style>
-#tapzone{ width: 75%; height: 3em; border: 3px ridge black; }
-#results{ line-height: 1.25em; }
+#tapzone{ width: 75%; height: 3em; border: 3px ridge silver;}
+#results{ width: 75%; line-height: 1.25em; border: 1px dotted black; margin-top: 1em;}
 </style>
 </head>
 <body>
 <h1>Try WebSpeechAPI/Recognition</h1>
-<div id="tapzone"></div>
+<div id="tapzone">tap to start/end</div>
 <div id="results"></div>
 <script>
 "use strict";
@@ -23,25 +23,43 @@ const xSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecogn
 const xSpeechGrammarList = window.SpeechGrammarList || window.webkitSpeechGrammarList;
 const xSpeechRecognitionEvent = window.SpeechRecognitionEvent || window.webkitSpeechRecognitionEvent;
 
-let isRecognizing = false;
+let timeRecognizing = 0 , isRecognizing = false;
 
 let wsrecog = new xSpeechRecognition();
 wsrecog.lang = "ja"; //ja:日本語。ということはen:英語もある？
 
 wsrecog.addEventListener("result", evt=>{
 	//音声認識結果イベント。型は xSpeechRecognitionEvent
-	console.log(evt.results);
+	//.result は認識結果リスト。
+	//.result.lengthが結果件数
+	//.result[N] は認識結果。
+	//.result[N].isFinal が認識処理完了フラグ
+	//.result[N].length が認識選択肢 alternative の数
+	//.result[N][M] が認識選択肢。
+	//.result[N][M].transcript が認識結果文
+	//.result[N][M].confidence が信頼度
+	let textResult = `[OK] ${evt.results.length} results.\n`;
+	for(let i=0; i<evt.results.length; i++){
+		textResult += `result#${i+1}, has ${evt.results[i].length} alternate(s).>\n`;
+		for(let j=0; j<evt.results[i].length; j++){
+			textResult += `#${j+1}> ${result[i][j].transcript} (${100*result[i][j].confidence}%)\n`;
+		}
+		textResult += `<result#${i+1}>\n`;
+	}
+	GET_ID("results").textContent = textResult;
+	//console.log(evt.results);
 });
 
 wsrecog.addEventListener("nomatch", evt=>{
 	//音声認識不能イベント。型は xSpeechRecognitionEvent
 	//語彙を与える形の場合か？
+	GET_ID("results").textContent = "[NO MATCH] "+evt.results.length;
 	console.log(evt);
 });
 wsrecog.addEventListener("error", evt=>{
 	//evt.errorに理由の文字列。型は SpeechRecognitionError
 	console.log(evt.error);
-	//GET_ID("results").textContent = evt.error;
+	GET_ID("results").textContent = "[ERROR] "+evt.error;
 });
 
 //各種タイミングイベント
@@ -51,29 +69,30 @@ wsrecog.addEventListener("error", evt=>{
 //speechstart~speechend 認識できそうな音の入力を検知~終了
 wsrecog.addEventListener("start", ()=>{
 	isRecognizing = true;
+	timeRecognizing = Date.now();
 	GET_ID("tapzone").textContent = "<onStart>";
 });
 wsrecog.addEventListener("end", ()=>{
 	isRecognizing = false;
-	GET_ID("tapzone").textContent += "<onEnd>";
+	GET_ID("tapzone").textContent += `<onEnd=${Date.now()-timeRecognizing}ms>`;
 });
 wsrecog.addEventListener("audiostart", ()=>{
-	GET_ID("tapzone").textContent += "<onAudioStart>";
+	GET_ID("tapzone").textContent += `<onAudioStart=${Date.now()-timeRecognizing}ms>`;
 });
 wsrecog.addEventListener("audioend", ()=>{
-	GET_ID("tapzone").textContent += "<onAudioEnd>";
+	GET_ID("tapzone").textContent += `<onAudioEnd=${Date.now()-timeRecognizing}ms>`;
 });
 wsrecog.addEventListener("soundstart", ()=>{
-	GET_ID("tapzone").textContent += "<onSoundStart>";
+	GET_ID("tapzone").textContent += `<onSoundStart=${Date.now()-timeRecognizing}ms>`;
 });
 wsrecog.addEventListener("soundend", ()=>{
-	GET_ID("tapzone").textContent += "<onSoundEnd>";
+	GET_ID("tapzone").textContent += `<onSoundEnd=${Date.now()-timeRecognizing}ms>`;
 });
 wsrecog.addEventListener("speechstart", ()=>{
-	GET_ID("tapzone").textContent += "<onSpeechStart>";
+	GET_ID("tapzone").textContent += `<onSpeechStart=${Date.now()-timeRecognizing}ms>`;
 });
 wsrecog.addEventListener("speechend", ()=>{
-	GET_ID("tapzone").textContent += "<onSpeechEnd>";
+	GET_ID("tapzone").textContent += `<onSpeechEnd=${Date.now()-timeRecognizing}ms>`;
 });
 
 //エリアがタップされたら音声認識開始/停止。
