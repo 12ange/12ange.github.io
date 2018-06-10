@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>NEWHTMLFILE</title>
+<style>
+#tapzone{ width: 75%; height: 3em; border: 3px ridge black; }
+#results{ line-height: 1.25em; }
+</style>
+</head>
+<body>
+<h1>Try WebSpeechAPI/Recognition</h1>
+<div id="tapzone"></div>
+<div id="results"></div>
+<script>
+"use strict";
+const NEW_TAG = tag => document.createElement(tag);
+const GET_ID = id => document.getElementById(id);
+
+/*** Chromeではオンライン・HTTPS必須 ***/
+/*** FireFoxではブラウザ側での設定必須 ***/
+const xSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const xSpeechGrammarList = window.SpeechGrammarList || window.webkitSpeechGrammarList;
+const xSpeechRecognitionEvent = window.SpeechRecognitionEvent || window.webkitSpeechRecognitionEvent;
+
+let isRecognizing = false;
+
+let wsrecog = new xSpeechRecognition();
+wsrecog.lang = "ja"; //ja:日本語。ということはen:英語もある？
+
+wsrecog.addEventListener("result", evt=>{
+	//音声認識結果イベント。型は xSpeechRecognitionEvent
+	console.log(evt.results);
+});
+
+wsrecog.addEventListener("nomatch", evt=>{
+	//音声認識不能イベント。型は xSpeechRecognitionEvent
+	//語彙を与える形の場合か？
+	console.log(evt);
+});
+wsrecog.addEventListener("error", evt=>{
+	//evt.errorに理由の文字列。型は SpeechRecognitionError
+	console.log(evt.error);
+	//GET_ID("results").textContent = evt.error;
+});
+
+//各種タイミングイベント
+//start~end 音声認識受付開始~終了
+//audiostart~audioend 音声収録開始~終了
+//soundstart~soundend 何らかの音の入力を検知~終了
+//speechstart~speechend 認識できそうな音の入力を検知~終了
+wsrecog.addEventListener("start", ()=>{
+	isRecognizing = true;
+	GET_ID("tapzone").textContent = "<onStart>";
+});
+wsrecog.addEventListener("end", ()=>{
+	isRecognizing = false;
+	GET_ID("tapzone").textContent += "<onEnd>";
+});
+wsrecog.addEventListener("audiostart", ()=>{
+	GET_ID("tapzone").textContent += "<onAudioStart>";
+});
+wsrecog.addEventListener("audioend", ()=>{
+	GET_ID("tapzone").textContent += "<onAudioEnd>";
+});
+wsrecog.addEventListener("soundstart", ()=>{
+	GET_ID("tapzone").textContent += "<onSoundStart>";
+});
+wsrecog.addEventListener("soundend", ()=>{
+	GET_ID("tapzone").textContent += "<onSoundEnd>";
+});
+wsrecog.addEventListener("speechstart", ()=>{
+	GET_ID("tapzone").textContent += "<onSpeechStart>";
+});
+wsrecog.addEventListener("speechend", ()=>{
+	GET_ID("tapzone").textContent += "<onSpeechEnd>";
+});
+
+//エリアがタップされたら音声認識開始/停止。
+GET_ID("tapzone").addEventListener("click",()=>{
+	if(isRecognizing){wsrecog.stop()}else{wsrecog.start()}
+});
+
+</script>
+</body>
+</html>
