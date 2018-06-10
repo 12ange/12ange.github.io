@@ -4,12 +4,13 @@
 <meta charset="utf-8">
 <title>WebSpeechAPIで音声認識：音声→文章の変換結果を返す</title>
 <style>
-#tapzone{ width: 75%; height: 3em; border: 3px ridge silver;}
+#tapzone{ width: 75%; min-height: 3em; border: 3px ridge silver;}
 #results{ width: 75%; line-height: 1.25em; border: 1px dotted black; margin-top: 1em;}
 </style>
 </head>
 <body>
 <h2>WebSpeechAPIで音声認識：音声→文章の変換結果を返す</h2>
+<div>音声認識練習用文章 [en] Supercalifragilisticexpialidocious [fr] Il offre sa confiance et son amour.</div>
 <div id="tapzone">開始・終了はこのエリアをTAP</div>
 <div id="results">結果はここに表示(毎回上書き)</div>
 <script>
@@ -20,13 +21,20 @@ const GET_ID = id => document.getElementById(id);
 /*** Chromeではオンライン・HTTPS必須 ***/
 /*** FireFoxではブラウザ側での設定必須 ***/
 const xSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const xSpeechGrammarList = window.SpeechGrammarList || window.webkitSpeechGrammarList;
+//const xSpeechGrammarList = window.SpeechGrammarList || window.webkitSpeechGrammarList;
+//20180611:文法については英語でも挙動が変なので(文法外でも認識する)、保留。
 const xSpeechRecognitionEvent = window.SpeechRecognitionEvent || window.webkitSpeechRecognitionEvent;
 
 let timeRecognizing = 0 , isRecognizing = false;
 
 let wsrecog = new xSpeechRecognition();
-wsrecog.lang = "ja"; //ja:日本語。en:英語もある。
+
+//認識に使う言語。これと違う言語で話しかけるとものの見事にとっちらかるｗ
+wsrecog.lang = "ja";
+
+//認識選択肢の最大数を変更。初期値は 1 。多いと拾いやすそう。
+wsrecog.maxAlternatives = 99;
+//20180611:Chromeデフォルトだと、増やしてもconfidenceはAlt#0番以外は0になるらしい(bug?)
 
 wsrecog.addEventListener("result", evt=>{
 	//音声認識結果イベント。型は xSpeechRecognitionEvent
