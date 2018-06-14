@@ -18,11 +18,13 @@ body{text-align:center;}
 #waitchips.green{background-color:#cfc;}
 #waitchips.blue{background-color:#ddf;}
 #currentScore{font-size: 3rem;}
-/*チップを模す要素*/
-.chip{
-	display:inline-block; width:3em; height:3em; line-height:3em; vertical-align:middle; border-radius:50%; margin:.3em; cursor:move;
+/*チップ・ボードのマス共通部*/
+.chip, .place{
+	display:inline-block; width:3em; height:3em; line-height:3em; vertical-align:middle; border-radius:50%;
 	user-select:none; -ms-user-select:none; -moz-user-select:none; -webkit-user-select:none;
 }
+/*チップを模す要素*/
+.chip{cursor:move;}
 .chip.onmove{opacity:0.4;}
 .chip.red{background-color:brown; color:#fdd;}
 .chip.red.reversed{color:brown; cursor:default;}
@@ -33,10 +35,7 @@ body{text-align:center;}
 .chip.blue{background-color:blue; color:#ddf;}
 .chip.blue.reversed{color:blue; cursor:default;}
 /*ボードのマスを模す要素*/
-.place{
-	display:inline-block; width:3em; height:3em; line-height:3em; vertical-align:middle; border-radius:50%; background-color:silver; margin:.3em; cursor:default;
-	user-select:none; -ms-user-select:none; -moz-user-select:none; -webkit-user-select:none;
-}
+.place{cursor:default; background-color:silver;}
 .place.overchip{background-color:transparent;}
 .place.putchipon{visibility:hidden; display:none;}
 </style>
