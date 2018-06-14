@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,minimum-scale=1">
+<title>Virtual Board for Finito!</title>
+<style type="text/css">
+body{text-align:center;}
+#mainboard{background-color:gray; margin:auto auto 1em;}
+#plcolor{display:inline-block; border:3px dotted gray;}
+#plcolor.red{border-color:brown;}
+#plcolor.yellow{border-color:olive;}
+#plcolor.green{border-color:green;}
+#plcolor.blue{border-color:blue;}
+#waitchips{margin:auto}
+#waitchips.red{background-color:#fdd;}
+#waitchips.yellow{background-color:#ffb;}
+#waitchips.green{background-color:#cfc;}
+#waitchips.blue{background-color:#ddf;}
+#currentScore{font-size: 3rem;}
+/*チップを模す要素*/
+.chip{
+	display:inline-block; width:3em; height:3em; line-height:3em; vertical-align:middle; border-radius:50%; margin:.3em; cursor:move;
+	user-select:none; -ms-user-select:none; -moz-user-select:none; -webkit-user-select:none;
+}
+.chip.onmove{opacity:0.4;}
+.chip.red{background-color:brown; color:#fdd;}
+.chip.red.reversed{color:brown; cursor:default;}
+.chip.yellow{background-color:olive; color:#ffb;}
+.chip.yellow.reversed{color:olive; cursor:default;}
+.chip.green{background-color:green; color:#cfc;}
+.chip.green.reversed{color:green; cursor:default;}
+.chip.blue{background-color:blue; color:#ddf;}
+.chip.blue.reversed{color:blue; cursor:default;}
+/*ボードのマスを模す要素*/
+.place{
+	display:inline-block; width:3em; height:3em; line-height:3em; vertical-align:middle; border-radius:50%; background-color:silver; margin:.3em; cursor:default;
+	user-select:none; -ms-user-select:none; -moz-user-select:none; -webkit-user-select:none;
+}
+.place.overchip{background-color:transparent;}
+.place.putchipon{visibility:hidden; display:none;}
+</style>
+</head>
+<body>
+<noscript><h3>PLEASE ENABLE JavaScript.</h3></noscript>
+<!-- noscript での見栄えを良くするため、classもきちんと設定 -->
+<table id="mainboard">
+<tr><td class="place">1</td><td class="place">2</td><td class="place">3</td><td class="place">3</td><td class="place">4</td><td class="place">4</td></tr>
+<tr><td class="place">5</td><td class="place">5</td><td class="place">6</td><td class="place">6</td><td class="place">7</td><td class="place">7</td></tr>
+<tr><td class="place">8</td><td class="place">8</td><td class="place">9</td><td class="place">9</td><td class="place">10</td><td class="place">10</td></tr>
+<tr><td class="place">11</td><td class="place">11</td><td class="place">12</td><td class="place">12</td><td class="place">13</td><td class="place">13</td></tr>
+<tr><td class="place">14</td><td class="place">14</td><td class="place">15</td><td class="place">15</td><td class="place">16</td><td class="place">16</td></tr>
+<tr><td class="place">17</td><td class="place">17</td><td class="place">18</td><td class="place">18</td><td class="place">19</td><td class="place">20</td></tr>
+</table>
+<div id="plcolor">配色<button disabled>Red</button><button>Yellow</button><button>Green</button><button>Blue</button>
+<table id="waitchips" class="red">
+<tr><td class="chip red">1</td><td class="chip red">2</td><td class="chip red">3</td><td class="chip red">4</td><td class="chip red">5</td><td class="chip red">6</td></tr>
+<tr><td class="chip red">7</td><td class="chip red">8</td><td class="chip red">9</td><td class="chip red">10</td><td class="chip red">11</td><td class="chip red">12</td></tr>
+</table>
+</div>
+<div>現在<span id="currentScore">0</span>点 ( <span id="currentDrops">0</span> 手目 )</div>
+<div>RESET <button id="btnResetNormal">with SHUFFLE</button> or <button id="btnResetEasy">with SORT &amp; OPEN</button></div>
+</body>
+<script>
+"use strict";
+const NEW_TAG = tag => document.createElement(tag);
+const GET_ID = id => document.getElementById(id);
+const GETS_TAG = (tag,root=document) => root.getElementsByTagName(tag);
+const GETS_CLASS = (cn,root=document) => root.getElementsByClassName(cn);
+
+//基礎知識：anotherNode.appendChild(既にDOMツリーに所属するNode) then **移動**になる。複写されない。
+let gaPlaces = [], gaChips = [], gaColors = [];
+
+const gHandleDnD = {
+	dragTarget: null,
+	handleEvent: function(event){
+		const mainTarget = event.target;
+		switch (event.type.toLowerCase()) {
+			case "dragstart":
+				this.dragTarget = mainTarget;
+				this.dragTarget.classList.add("onmove");
+				event.dataTransfer.effectAllowed = "move";
+				break;
+			case "dragover":
+				event.preventDefault();
+				event.dataTransfer.dropEffect = "move";
+				break;
+			case "dragenter":
+				mainTarget.classList.add("overchip");
+				break;
+			case "dragleave":
+				mainTarget.classList.remove("overchip");
+				break;
+			case "drop":
+				event.preventDefault();
+				mainTarget.classList.remove("overchip");
+				moveChipTo(this.dragTarget, mainTarget.parentNode);
+				updateScore();
+				break;
+			case "dragend":
+				this.dragTarget.classList.remove("onmove");
+				this.dragTarget = null;
+				break;
+		}
+	},
+};
+
+function moveChipTo(elmChip,elmTd){
+	if( elmChip === null ){ return; } //ページ外からのdropを無視
+	const dragSibling = elmChip.previousElementSibling; //マス間移動なら、!null
+	const dropTarget = elmTd.firstElementChild;
+	if( dragSibling !== null ){
+		dragSibling.classList.remove("putchipon");
+	}
+	if( dropTarget !== null ){
+		dropTarget.classList.add("putchipon");
+	}
+	elmTd.appendChild(elmChip);
+	//待機場から移動され、反転チップが残っていれば表にする
+	if( dragSibling === null ){
+		const collectionReversed = GETS_CLASS("reversed");
+		if(collectionReversed.length>0){
+			const elm = collectionReversed[0]; //collectionは削除が即時反映される
+			elm.classList.remove("reversed");
+			elm.draggable = true;
+		}
+	}
+}
+
+function updateScore(){
+	let prevIdx = 0, chainNow = 0, chainMax = 0;
+	for(const ch of GETS_CLASS("chip",GET_ID("mainboard"))){
+		let thisIdx = gaChips.indexOf(ch)+1;
+		if(prevIdx < thisIdx){
+			if(++chainNow > chainMax){
+				chainMax = chainNow;
+			}
+		}else{
+			chainNow = 1; //それ自身が1点目になるから
+		}
+		prevIdx = thisIdx;
+	}
+	GET_ID("currentScore").textContent = chainMax;
+	GET_ID("currentDrops").textContent = ( GET_ID("currentDrops").textContent- -1 );
+}
+
+function changeColor( event ){
+	const btnTarget = event.target;
+	const lowername = btnTarget.textContent.toLowerCase();
+	GET_ID("plcolor").className = lowername;
+	GET_ID("waitchips").className = lowername;
+	for(const elm of GETS_CLASS("chip")){
+		for(const strColor of gaColors){ //設定しつつ違う色を削除
+			if( strColor === lowername ){
+				elm.classList.add(strColor);
+			}else{
+				elm.classList.remove(strColor);
+			}
+		}
+	}
+	//(enable|disable)-ize buttons
+	for(const elm of GETS_TAG("button",GET_ID("plcolor"))){
+		elm.disabled = (elm === btnTarget);
+	}
+}
+
+function init(){
+	for(const td of GETS_TAG("td",GET_ID("mainboard"))){
+		let spn = NEW_TAG("span");
+		spn.textContent = td.textContent;
+		spn.className = "place";
+		spn.addEventListener("dragover",gHandleDnD);
+		spn.addEventListener("dragenter",gHandleDnD);
+		spn.addEventListener("dragleave",gHandleDnD);
+		spn.addEventListener("drop",gHandleDnD);
+		td.className ="";
+		while(td.lastChild){td.removeChild(td.lastChild);}
+		td.appendChild(spn);
+		gaPlaces.push(spn); //初期順序を保存
+	}
+	for(const td of GETS_TAG("td",GET_ID("waitchips"))){
+		let spn = NEW_TAG("span");
+		spn.textContent = td.textContent;
+		spn.className = "chip";
+		spn.draggable = true;
+		spn.addEventListener("dragstart",gHandleDnD);
+		spn.addEventListener("dragend",gHandleDnD);
+		td.className ="";
+		while(td.lastChild){td.removeChild(td.lastChild);}
+		td.appendChild(spn);
+		gaChips.push(spn); //初期順序を保存
+	}
+	GETS_TAG("button",GET_ID("plcolor"))[2].click();
+	//noscriptなら赤のまま、緑にすることでこの行に来た＝scriptが動けることをappeal
+}
+
+function resetChipsEtcetra(orderChips=gaChips,flagOpen=true){
+	let i = 0;
+	for(const td of GETS_TAG("td",GET_ID("waitchips"))){
+		moveChipTo(orderChips[i++], td);
+	}
+	for(let idx=0; idx<orderChips.length; idx++){
+		if( flagOpen || (idx < 3) ){
+			orderChips[idx].classList.remove("reversed");
+			orderChips[idx].draggable = true;
+		}else{
+			orderChips[idx].classList.add("reversed");
+			orderChips[idx].draggable = false;
+		}
+	}
+	GET_ID("currentScore").textContent = 0;
+	GET_ID("currentDrops").textContent = 0;
+}
+
+(()=>{
+	for(const elm of GETS_TAG("button",GET_ID("plcolor"))){
+		elm.addEventListener("click",changeColor);
+		gaColors.push(elm.textContent.toLowerCase());
+	}
+	GET_ID("btnResetEasy").addEventListener("click",()=>{
+		resetChipsEtcetra();
+	});
+	GET_ID("btnResetNormal").addEventListener("click",()=>{
+		let orderChips = [], lenOrd = 0, lenChp = gaChips.length;
+		while( lenOrd < lenChp ){
+			let idx = ((1+lenOrd)*Math.random())|0;
+			orderChips.splice(idx,0,gaChips[lenOrd++]);
+		}
+		resetChipsEtcetra(orderChips,false);
+	});
+	init();
+})();
+</script>
+</html>
