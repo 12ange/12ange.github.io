@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,minimum-scale=1">
+<title>IMAGETILER</title>
+<style>
+body>canvas{max-width:100%;max-height:100%}
+.settings{border:.5em groove #ccc;padding:.5em}
+#btnDnld{width:100%;padding:1em}
+#btnUpOrder,#btnDnOrder{padding:1em}
+</style>
+</head><body>
+<div class="settings">
+<input id="inBreak" type="range" min="1" max="10" step="1" value="1">
+<output id="outInBreak">1</output> 枚で改行
+<br>1枚当たり <select id="slTileSize" disabled></select>
+を<br>縦横<input id="inShrink" type="range" min="1" max="10" step="1" value="1">
+<output id="outInShrink">1</output> 分の1に縮小
+<br>=各枚 <output id="outSizePostShrink">???</output>、
+出力 <output id="outSizeCanvas">???</output>
+<br><input id="inFile" type="file" accept="image/*">
+<br><table><tr>
+<td><select id="slSource" multiple></select></td>
+<td><button id="btnUpOrder" disabled>↑</button><br><button id="btnDnOrder" disabled>↓</button></td>
+</tr></table>
+</div>
+<canvas id="result"></canvas>
+<button id="btnDnld">Download</button><a id="anchor" href="#", download="tileimg.png" style="display:none"></a>
+
+<script>
+"use strict";
+const NEW_TAG = tag => document.createElement(tag);
+const GET_ID = id => document.getElementById(id);
+const gURL = window.URL || window.webkitURL;
+
+let postedFiles = [];
+let postedBitmaps = [];
+
+//何も起こさ(せ)ない
+function noActionTaken(_evt){_evt.stopPropagation();_evt.preventDefault();}
+
+//ファイル読み取り
+function handleFiles(_filelist){
+	//新しい(既存ではない)ファイルを受け取った？
+	const isNewPost = file =>
+		-1 === postedFiles.findIndex( (elm,i,a)=>
+			elm.type === file.type && elm.size === file.size && elm.lastModified === file.lastModified
+		); //MIMETYPE、大きさ、最終更新日時が同一なら同じファイルとみなしている
+	for( const file of _filelist ){
+		if( /^image/.test(file.type) && isNewPost(file) ){openImage(file)}
+	}
+}
+
+//ファイルを描画できる画像に変換して保持
+function openImage(_file){
+	//中身はpromise-chain
+	self.createImageBitmap(_file).then(imgbmp=>{
+		postedFiles.push(_file);
+		postedBitmaps.push(imgbmp);
+		updateSourceAndResult();
+	}).catch(e=>{
+		console.error(e);
+	});
+}
+
+//オブジェクトの持つ幅と高さを一定の文字列にして返す
+function stringFromWidthHeight(obj){
+	return ( "width" in obj && "height" in obj )? `幅 ${obj["width"]} x 高さ ${obj["height"]}` : "" ;
+}
+
+//サイズ選択肢の更新
+function updateTileSizeSelect(){
+	const slTileSize = GET_ID("slTileSize");
+	let sizes_posted = postedBitmaps.map(v=>JSON.stringify(v,["width","height"]));
+	let sizes_presented = Array.from( slTileSize.options, v=>v.value ); //optionが既に保持しているもの
+	for(const jsonNewSize of sizes_posted){
+		if( ! sizes_presented.includes(jsonNewSize) ){
+			//無かったら適切な位置を探して追加
+			let idxIns=0,objNewSize=JSON.parse(jsonNewSize);
+			while(idxIns<sizes_presented.length){
+				let objPresent = JSON.parse(sizes_presented[idxIns]);
+				if(
+					objNewSize["width"] <= objPresent["width"] && objNewSize["height"] <= objPresent["height"]
+				){
+					break;
+				}else{
+					idxIns++;
+				}
+			}
+			//<select>だけでなく検索対象の配列にも反映
+			slTileSize.add(new Option(
+				stringFromWidthHeight(objNewSize), //text
+				jsonNewSize //value
+			),idxIns);
+			sizes_presented.splice(idxIns,0,jsonNewSize);
+			//未選択なら先頭を強制的に選択
+			if(slTileSize.selectedIndex<0){slTileSize.selectedIndex=0}
+		}
+	}
+	slTileSize.disabled = false;
+}
+
+//画像リストの更新
+function updateFileSelector(){
+	const slSource = GET_ID("slSource");
+	for(let i=slSource.options.length; i<postedFiles.length; i++ ){
+		let file=postedFiles[i], ibmp=postedBitmaps[i];
+		slSource.add(new Option(
+			`${file.name} (${stringFromWidthHeight(ibmp)})` //text
+		));
+	}
+	slSource.size = slSource.options.length;
+	if(slSource.size>2){slSource.multiple=false} //見た目のためにやってた複数選択を取り消す
+	GET_ID("inBreak").max = postedFiles.length;
+}
+
+//選択変更
+function changedSelectedIndex(){
+	const slSource = GET_ID("slSource");
+	GET_ID("btnUpOrder").disabled = slSource.selectedIndex===0; //先頭なら無効化
+	GET_ID("btnDnOrder").disabled = slSource.selectedIndex===slSource.length-1; //末尾なら無効化
+}
+
+//スライダー変更を反映(2種)
+function changedInBreak(){
+	GET_ID("outInBreak").textContent = GET_ID("inBreak").valueAsNumber;
+	updateResult();
+}
+function changedInShrink(){
+	GET_ID("outInShrink").textContent = GET_ID("inShrink").valueAsNumber;
+	updateResult();
+}
+
+//キャンバス更新
+function updateResult(){
+	const tilePerLine = GET_ID("inBreak").valueAsNumber;
+	const ratioShrink = GET_ID("inShrink").valueAsNumber;
+	const baseBmpSize = (opt=>(
+		opt ? JSON.parse(opt.value) : null
+	))( GET_ID("slTileSize").selectedOptions.item(0) ); //this returns null if ops.length === 0
+	if( !baseBmpSize )return;
+
+	const sfwh_2arg = (_w,_h)=>{return stringFromWidthHeight( {"width":_w,"height":_h} )};
+	//タイルとキャンバスそれぞれの幅と高さ
+	const widthTile = baseBmpSize["width"]/ratioShrink|0;
+	const heightTile = baseBmpSize["height"]/ratioShrink|0;
+	const widthCanvas = widthTile*tilePerLine;
+	const heightCanvas =( (postedBitmaps.length+tilePerLine-1)/tilePerLine|0 )*heightTile;
+	//行数=(postedBitmaps.length/tilePerLine)の切り上げ
+	GET_ID("outSizePostShrink").textContent = sfwh_2arg(widthTile,heightTile);
+	GET_ID("outSizeCanvas").textContent = sfwh_2arg(widthCanvas,heightCanvas);
+
+	//敷き詰め方とリストを参照してcanvasに描画
+	const cnvs = GET_ID("result");
+	cnvs.width=widthCanvas; cnvs.height=heightCanvas;
+	const ctx = cnvs.getContext("2d");
+	ctx.fillStyle="gray"; ctx.fillRect(0, 0, cnvs.width, cnvs.height); //下塗り
+	for(let idx=0; idx<postedBitmaps.length; idx++){
+		let tpx=idx%tilePerLine, tpy=idx/tilePerLine|0;
+		ctx.drawImage(postedBitmaps[idx], tpx*widthTile, tpy*heightTile, widthTile, heightTile);
+	}
+}
+
+//ファイル順序変更
+function changeImgOrder(ev){
+	const delta = (ev.target===GET_ID("btnUpOrder"))?-1:(ev.target===GET_ID("btnDnOrder"))?1:0;
+	if(delta==0)return;
+
+	const slSource = GET_ID("slSource");
+	const idxFrom = slSource.selectedIndex;
+	const idxTo = idxFrom+delta;
+	const swap_elm = (a,i,j)=>{const t=a[i];a[i]=a[j];a[j]=t};
+	//swap_elm(slSource.options,idxFrom,idxTo);
+	swap_elm(postedFiles,idxFrom,idxTo);
+	swap_elm(postedBitmaps,idxFrom,idxTo);
+	const optFrom = slSource.options[idxFrom];
+	slSource.insertBefore(optFrom,
+		(delta==-1)? optFrom.previousElementSibling : optFrom.nextElementSibling.nextElementSibling
+	); //DOMツリー内の要素なら挿入が自動的に移動になる(のでremoveChildは不要)
+	changedSelectedIndex();
+	updateResult();
+}
+
+//canvas画像をファイル出力
+function canvasToPng(){
+	GET_ID("result").toBlob(blb=>{
+		const anch = GET_ID("anchor");
+		anch.href = gURL.createObjectURL(blb);
+		anch.click();
+	});
+}
+
+//ソース更新
+function updateSource(){updateTileSizeSelect();updateFileSelector()}
+//両方更新
+function updateSourceAndResult(){updateSource();updateResult()}
+
+//--------
+
+//DnDによるページ遷移を強制排除
+document.body.addEventListener("dragenter",noActionTaken);
+document.body.addEventListener("dragover",noActionTaken);
+document.body.addEventListener("drop",noActionTaken);
+
+//ファイル入力欄の親要素(無名div)をドロップ領域に
+GET_ID("inFile").parentNode.addEventListener("drop",ev=>{
+	noActionTaken(ev);
+	handleFiles( ev.dataTransfer.files );
+});
+
+//各所の入力欄が更新されたら結果画像も更新する
+GET_ID("inBreak").addEventListener("input",changedInBreak);
+GET_ID("slTileSize").addEventListener("change",updateResult);
+GET_ID("inShrink").addEventListener("input",changedInShrink);
+GET_ID("slSource").addEventListener("change",changedSelectedIndex);
+
+//順序変更ボタンと関数を結びつける
+GET_ID("btnUpOrder").addEventListener("click",changeImgOrder);
+GET_ID("btnDnOrder").addEventListener("click",changeImgOrder);
+
+//変換後画像を入手できるように
+GET_ID("btnDnld").addEventListener("click",canvasToPng);
+
+</script></body></html>
