@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,minimum-scale=1">
+<title>温湿度計の値から各種指数を算出</title>
+<style>
+input:valid {background-color:white;color:black}
+input:invalid {background-color:black;color:white}
+</style>
+</head>
+<body><!--
+ref: https://www.daiichi-kagaku.co.jp/situdo/notes/note108.html
+
+t = 乾球温度[℃]
+h = 相対湿度[%RH]
+d = 露点温度[℃]
+
+e = 水蒸気圧[Pa]
+E(x) = 温度xの飽和水蒸気圧[Pa]
+
+h = 100*e/E(t) ... 相対湿度の定義式
+e = E(t)*h/100 ... 上式をeについて：温湿度計の読み取り
+
+温度から飽和水蒸気圧への変換(0<=t<=100 区間) (Sonntagの式)
+{
+  T=t+273.15;
+  ln( E(T) ) == -6096.9385*(1/T) + 21.2409642 -2.711193e-2*T +1.673952e-5*T*T +2.433502*ln(T);
+  @returns E(T) = exp( 右辺 );
+}
+
+飽和水蒸気圧から露点温度への変換(611.213<e) 611.213[Pa]は0.0℃の水の飽和水蒸気圧
+{
+  y=ln( e/611.213 );
+  @returns d = 13.715*y + 8.4262e-1*y*y + 1.9048e-2*y*y*y + 7.8158e-3*y*y*y*y;
+}
+
+夏場用に使うので、有効な入力値を
+25 <= t (< 50)
+30 <= h <= 100
+に縛って利用する式(パラメタ)を限定する
+--><h2>[夏季向け] 温湿度計の値から各種指数を算出</h2>
+<p id="notes">
+ご家庭にある温湿度計の値を入力することで、快適性評価に使われる各種指数を算出します。
+<ul>
+<li>湿球温度は1013.25[hPa]における算出値です。</li>
+<li>黒球温度は晴天の一日平均値<small>(300[W/m&sup2;])</small>・微風<small>(1[m/s])</small>環境での推定値です。
+<br>日中は上がり、夜間は下がり、曇天や風が吹けば下がります。</li>
+<li>湿球黒球温度は上記に加え、屋内の評価式<small>(0.7湿球温度+0.3黒球温度)</small>です。</li>
+</ul>
+</p>
+<fieldset>
+	<legend>測定された値</legend>
+	<div>
+		<span>🌡️ 温度</span>
+		<input type="number" id="iTemp" required min="25" max="49.9" step="0.1" value="30">
+		<span>℃</span>
+		<span id="limitTemp"></span>
+	</div>
+	<div>
+		<span>💧 湿度</span>
+		<input type="number" id="iHumid" required min="30" max="99" step="1" value="60">
+		<span>%</span>
+		<span id="limitHumid"></span>
+	</div>
+</fieldset>
+<fieldset>
+	<legend>換算結果</legend>
+	<table>
+		<caption>各種指数</caption>
+		<tr><td>🇯🇵 不快指数</td><td id="oTmpHmdIdx">0</td><td>(単位なし)</td><td id="xTmpHmdIdx">???</td></tr>
+		<tr><td>🇺🇸 Heat Index</td><td id="oHeatIndex">0</td><td>(℉)</td><td id="xHeatIndex">???</td></tr>
+		<tr><td>🇨🇦 Humidex</td><td id="oHumidex">0</td><td>(℃)</td><td id="xHumidex">???</td></tr>
+	</table>
+	<table>
+		<caption>温度と湿度</caption>
+		<tr><td>🌡️️⚫ 黒球温度</td><td id="oTempGlb">0</td><td>℃</td><td>晴天微風下の推定値</td></tr>
+		<tr><td>🌡️️　 乾球温度</td><td id="oTempDry">0</td><td>℃</td><td>測定値</td></tr>
+		<tr><td>☁️⚫ 湿球黒球温度</td><td id="oWetGlbTmp">0</td><td>℃</td><td>屋内・晴天微風下の推定値</td></tr>
+		<tr><td>🌡️☁️ 湿球温度</td><td id="oTempWet">0</td><td>℃</td><td>算出値</td></tr>
+		<tr><td>🌡️🌧️ 露点温度</td><td id="oTempDew">0</td><td>℃</td><td>算出値</td></tr>
+		<tr><td>💧　 相対湿度</td><td id="oRelHumid">0</td><td>%</td><td>測定値</td></tr>
+	</table>
+</fieldset>
+
+<script>
+"use strict";
+//================ 各種方程式やサブルーチン ================//
+
+function ttoe(_t){ //引数は摂氏温度、返り値は飽和水蒸気圧
+	_t+=273.15; //摂氏温度を絶対温度に
+	return Math.exp( -6096.9385*(1/_t) + 21.2409642 -2.711193e-2*_t +1.673952e-5*_t*_t +2.433502*Math.log(_t) );
+}
+const eZero = ttoe(0);
+function etot(_e){ //引数が飽和水蒸気圧の時、返り値は露点温度
+	let y = Math.log( _e/eZero );
+	return 13.715*y + 8.4262e-1*y*y + 1.9048e-2*y*y*y + 7.8158e-3*y*y*y*y;
+}
+function tdew(_t,_rh){ //引数は乾球温度と相対湿度
+	return etot( ttoe(_t)*_rh/100 );
+}
+// https://ja.wikipedia.org/wiki/%E4%B8%8D%E5%BF%AB%E6%8C%87%E6%95%B0
+function fukaisisuu_raw(_t,_rh){ //引数は乾球温度と相対湿度
+	return .81*_t + .01*_rh*(.99*_t-14.3) + 46.3;
+}
+// https://en.wikipedia.org/wiki/Humidex
+function humidex_raw(_tair,_tdew){ //引数は乾球温度と露点温度
+	return _tair+0.5555*( 6.11*Math.exp( 5417.7530*( 1/273.16-1/(273.15+_tdew) ) )-10 );
+}
+// https://en.wikipedia.org/wiki/Heat_index
+function heatindex_raw(_t,_r){ //引数は**華氏**乾球温度と相対湿度
+	const arrC = [16.923, .185212, 5.37941, -.100254, 9.41695e-3, 7.28898e-3, 3.45372e-4, -8.14971e-4, 1.02102e-5, -3.8646e-5, 2.91583e-5, 1.42721e-6, 1.97483e-7, -2.18429e-8, 8.43296e-10, -4.81975e-11];
+	const arrP = [1, _t, _r, _t*_r, _t*_t, _r*_r, _t*_t*_r, _t*_r*_r, _t*_t*_r*_r, _t*_t*_t, _r*_r*_r, _t*_t*_t*_r, _t*_r*_r*_r, _t*_t*_t*_r*_r, _t*_t*_r*_r*_r, _t*_t*_t*_r*_r*_r];
+	return arrC.reduce( (a,c,i)=>a+c*arrP[i] , 0);
+}
+function tctotf(_t){ //引数は摂氏温度、返り値は華氏温度
+	return _t*9/5+32;
+}
+//https://www.daiichi-kagaku.co.jp/situdo/notes/note105.html
+function testTwet(_t,_rh){ //引数は乾球温度と相対湿度、返り値は湿球温度の推測値
+	//Sprungの公式 e = E(w)-A*P*(t-w)
+	const ap = .000662*101325; //A=乾湿計係数(湿球が氷結していない時),P=大気圧[Pa]
+	//公式を変形して e+A*P*t = E(w)+A*P*w
+	const vLeft = ttoe(_t)*_rh/100 + ap*_t;
+	const fRight = w => ttoe(w)+ap*w;
+
+	//vLeft == vRight となる w : vRight=fRight(w) を求めたい。挟み撃ち法。
+	//初期値の低いほうは露点温度、高いほうは乾球温度。
+	let low_temp = tdew(_t,_rh), hi_temp = _t;
+	let low_val = fRight(low_temp), hi_val = fRight(hi_temp);
+	let floor = v=>v|0;
+	while( floor(low_temp*10)<floor(hi_temp*10) ){
+		let tau = (vLeft-low_val)/(hi_val-low_val); //値の差を[0,1]に丸めて
+		let mid_temp = low_temp+tau*(hi_temp-low_temp); //温度に反映
+		let mid_val = fRight(mid_temp);
+		if( mid_val < vLeft ){
+			low_val = mid_val; low_temp = mid_temp;
+		}else{
+			hi_val = mid_val; hi_temp = mid_temp;
+		}
+	}
+	return floor(low_temp*10)/10;
+}
+//http://www.heat-island.jp/web_journal/2013.html -> 13A003「岡田・日下の黒球温度推定式の広域適用とパラメータ調整」より
+function supposedTglobe(_tdry,_insol,_vwind){ //引数は乾球温度、日射量[W/m^2]と風速[m/s]
+	return _tdry+(_insol-38.5)/(.0217*_insol+4.35*_vwind+23.5);
+}
+//晴天微風天候条件での推定値
+function sunnybreezeTglobe(_tdry){
+	//過去の全天日射量 https://www.data.jma.go.jp/obd/stats/etrn/index.php の地上気象観測地点
+	//日射量を仮に300[W/m^2]とおく。全天日射量の(300*86400[s]=)25.92[MJ/m^2]に相当する。
+	// 50 |  4.32 | 雨
+	//222 | 19.18 | 曇
+	//300 | 25.92 | 晴
+	//風速を仮に1[m/s]とおく。
+	return supposedTglobe(_tdry,300,1);
+}
+
+//================ toHTML ================//
+const GET_ID = id => document.getElementById(id);
+
+//複数ボーダーのどこになるか。昇順を保ったまま挿入された時のindex値に等しい
+function value_rank( _arr_sort_asc, _v ){
+	let i=_arr_sort_asc.length-1;
+	while( i>=0 ){
+		if(_arr_sort_asc[i]<=_v){
+			return i+1;
+		}else{
+			i--;
+		}
+	}
+	return 0;
+}
+
+//不快指数{快い<70<=暑くない<75<=やや暑い<80<=暑くて汗が出る<85<=暑くてたまらない} 69-121
+const border_thix = [70,75,80,85];
+const message_thix = ["快い","暑くない","やや暑い","暑くて汗が出る","暑くてたまらない"];
+//HeatIndex{clear<80<=caution<90=<extreme_caution<105=<danger<130=<extreme_danger} 76-373
+const border_heat = [80,90,105,130];
+const message_heat = ["(clear)","Caution","Extreme Caution","Danger","Extreme Danger"];
+//Humidex{clear<20<=little_to_no_discomfort<30<=some_disc.<40<=great_disc.<=45<dangerous} 24-116
+const border_hmdx = [20,30,40,46];
+const message_hmdx = ["(clear)","Little To No Discomfort","Some Discomfort","Great Discomfort","Dangerous"];
+//湿球黒球温度・暑さ指数・WBGT
+const border_wbgt = [21,25,28,31];
+const message_wbgt = ["(平常)","注意","警戒","厳重警戒","危険"]
+
+//換算結果を再計算
+function recalculate(){
+	const iTemp = GET_ID("iTemp");
+	const iHumid = GET_ID("iHumid");
+	if( !iTemp.validity.valid || !iHumid.validity.valid ){return;}
+
+	const floor = v=>v|0;
+	const floor10 = v=>((10*v)|0)/10;
+	let tdry = iTemp.valueAsNumber;
+	let rhmd = iHumid.valueAsNumber;
+	let tdpt = tdew(tdry,rhmd);
+	let twet = testTwet(tdry,rhmd);
+	let stgl = sunnybreezeTglobe(tdry);
+	let swgt = .7*twet+.3*stgl;
+	let thix = floor( fukaisisuu_raw(tdry,rhmd) );
+	let heat = floor( heatindex_raw(tctotf(tdry),rhmd) );
+	let hmdx = floor( humidex_raw(tdry,tdpt) );
+
+	GET_ID("oTempDry").textContent = floor10(tdry);
+	GET_ID("oRelHumid").textContent = floor(rhmd);
+	GET_ID("oTempDew").textContent = floor10(tdpt);
+	GET_ID("oTempWet").textContent = floor10(twet);
+	GET_ID("oTempGlb").textContent = floor10(stgl);
+	GET_ID("oWetGlbTmp").textContent = floor10(swgt);
+
+	const xofy = (x,y,cc)=>{
+		let s="";
+		while(x>0){s+=cc[0];x--;y--;}
+		while(y>0){s+=cc[1];y--;}
+		return s;
+	};
+
+	//(ID共通部、ボーダー値配列、メッセージ配列、適用値)
+	const subroutine = (_idCommon,_aBorder,_aMessage,_value)=>{
+		let elmO = GET_ID("o"+_idCommon);
+		let elmX = GET_ID("x"+_idCommon);
+		let rank = value_rank(_aBorder,_value);
+		elmO.textContent = _value;
+		elmX.textContent = xofy(rank+1,_aMessage.length,"⚠▪") +" "+ _aMessage[rank];
+	};
+	subroutine("TmpHmdIdx",border_thix,message_thix,thix);
+	subroutine("HeatIndex",border_heat,message_heat,heat);
+	subroutine("Humidex"  ,border_hmdx,message_hmdx,hmdx);
+}
+
+window.addEventListener("load",()=>{
+	const iTemp = GET_ID("iTemp");
+	const iHumid = GET_ID("iHumid");
+	GET_ID("limitTemp").textContent = `(${iTemp.min}~${iTemp.max}${iTemp.nextElementSibling.textContent})`;
+	GET_ID("limitHumid").textContent = `(${iHumid.min}~${iHumid.max}${iHumid.nextElementSibling.textContent})`;
+
+	//入力値が変わるたびに呼び出されるように
+	iTemp.addEventListener("input",recalculate);
+	iHumid.addEventListener("input",recalculate);
+	recalculate();
+});
+
+</script>
+</body>
+</html>
