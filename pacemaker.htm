@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Starlight Pacer - 各種イベント向けペースメーカー</title>
+<style>
+#eventTitle,#currentValue,#targetValue{ text-align: center }
+#currentValue{ font-size:300% }
+#targetValue{ font-size:150% }
+.amount{ font-size: 2em }
+.unit{ font-size: .7em }
+</style>
+</head>
+<body>
+<!--
+<div id="eventInfo">
+	<output id="eventTitle">eventTitle</output>
+	<output id="eventRange">eventRange</output>
+</div>
+-->
+<div id="currentValue">
+	<output class="amount">123456789</output>
+	<output class="unit">?</output>
+</div>
+<div id="targetValue">目標：
+	<output class="amount">123456789</output>
+	<output class="unit">?</output>
+</div>
+<hr>
+<div>
+	<!--設定セクション-->
+	<input id="startDate" type="date"> 15:00:00(JST) ~
+	<input id="endDate" type="date"> 20:59:59(JST)
+	<br>
+	<select id="targetSelect">
+		<option value="xxx">手動指定→</option>
+		<option value="p15">15,000pt - 上位1枚 (Live Parade)</option>
+		<option value="p18">18,000pt - 上位1枚 (Live Groove / エンブレム形式)</option>
+		<option value="p25">25,000pt - イベ限スカチケ</option>
+		<option value="p45">45,000pt - ジュエル取り切り</option>
+		<option value="f115">115万人 - プロデュースレシピ</option>
+		<option value="f145">145万人 - ジュエル取り切り</option>
+		<option value="f200">200万人 - 完走</option>
+	</select>
+	<input id="customTargetAmount" type="number" min="0" max="999" value="100">
+	<select id="customTargetUnit">
+		<option value="p">× 1000pt</option>
+		<option value="f">× 万人</option>
+	</select>
+	<div>URL：<a id="settledURI"></a></div>
+</div>
+
+<script>
+"use strict";
+const GET_ID = id => document.getElementById(id);
+//const gURL = window.URL || window.webkitURL;
+const gStr32 = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
+
+let gDateStart, gDateEnd, gTargetAmount, gTimerID=0;
+
+//今日の日付から、今やってそうなイベントを割り出す
+function autoSetEvent(){
+	//海外対応できるようにUTCで。1500JST==0600UTC,2100JST==1200UTC
+	//奇数月末日から 8日頃まで　Parade
+	//偶数月末日から 8日頃まで　Groove
+	//毎月19日頃から26日頃まで　Embrem
+	let dtNow = new Date();
+	let dtTom = new Date( dtNow.getTime()+864e5 ); //今から1日後を表すDateオブジェクト。末日を計算するのがめんどいので
+	let eventTypeString, dtStart, dtEnd, yy, mm, dd = dtTom.getUTCDate(), ds, de;
+	let chrTgtType = "";
+
+	if( dd >= 20 ){
+		eventTypeString = "EMBLEM event";
+		yy = dtTom.getUTCFullYear();
+		mm = dtTom.getUTCMonth();
+		ds = 19, de = 26;
+		chrTgtType = "p";
+	}
+	else if( dd <= 9 ){
+		let isParade = dtTom.getUTCMonth()&1;
+		eventTypeString = (isParade ? "PARAD" : "GROOV")+"E event";
+		yy = dtTom.getUTCFullYear();
+		mm = dtTom.getUTCMonth();
+		ds = 0, de = 8;
+		chrTgtType = isParade ? "f" : "p";
+	}
+	else{
+		eventTypeString = "(other/out-of event)";
+		yy = dtNow.getUTCFullYear();
+		mm = dtNow.getUTCMonth();
+		ds = dtNow.getUTCDate(), de = ds+7;
+	}
+	gDateStart = new Date(Date.UTC( yy, mm, ds, 6 ));
+	gDateEnd = new Date(Date.UTC( yy, mm, de, 12 ));
+
+	//GET_ID("eventTitle").textContent = eventTypeString;
+	GET_ID("startDate").valueAsDate = gDateStart; //このinputはUTCで表示しているようだ
+	GET_ID("endDate").valueAsDate = gDateEnd;
+
+	//目標も自動選択
+	let sel = GET_ID("targetSelect");
+	for( let i=0 ; i<sel.length ; i++ ){
+		if( sel[i].value[0] === chrTgtType ){
+			sel.selectedIndex = i;
+			onChangeTargetSelect(); //変更されたことを通知せねば
+			break;
+		}
+	}
+}
+
+//設定用文字列を受け取って反映する
+function manualSetEvent(_strOpt){
+	let i, flr=[0,0,0,0]; //four letter for range
+	for(i in flr){
+		flr[i] = gStr32.indexOf(_strOpt[i]);
+	}
+	flr[0]--; flr[2]--; //忘れないうちに[1-12]を[0-11]に補正
+	setupDateRange(...flr);
+
+	let ctu = _strOpt[4], cta = _strOpt.substr(5)|0;
+	let elm = GET_ID("customTargetUnit");
+	for(i=0; i<elm.length; i++){
+		if( elm[i].value===ctu ){
+			elm.selectedIndex = i;
+			break;
+		}
+	}
+	elm = GET_ID("customTargetAmount");
+	if( cta < elm.min ){ //cap between min-max;
+		cta = elm.min;
+	}else if( elm.max < cta ){
+		cta = elm.max;
+	}
+	elm.value = cta;
+
+	//マニュアル設定したので
+	GET_ID("targetSelect").selectedIndex=0;
+	onChangeTargetSelect();
+}
+
+//期間の設定(開始月,日,終了月,日) 月は[0-11]であることに注意
+function setupDateRange(_mmS,_ddS,_mmE,_ddE){
+	//受け取った「終了日」が過去のものだった場合は来年の同日と置く
+	let dt = new Date(), ye=dt.getUTCFullYear();
+	if( dt.getUTCMonth() > _mmE || ( dt.getUTCMonth()===_mmE && dt.getUTCDate() > _ddE ) ){
+		ye++;
+	}
+	//終了日より開始日の方が同一年では後になる場合は終了年の前年が開始年となる
+	let ys=ye;
+	if( _mmS > _mmE || (_mmS===_mmE && _ddS > _ddE ) ){
+		ys--;
+	}
+	gDateStart = new Date(Date.UTC( ys, _mmS, _ddS, 6 ));
+	gDateEnd = new Date(Date.UTC( ye, _mmE, _ddE, 12 ));
+
+	GET_ID("startDate").valueAsDate = gDateStart;
+	GET_ID("endDate").valueAsDate = gDateEnd;
+}
+
+//数値をコンマつき文字列にする
+function stringCommaAdded(number){
+	let numstr = number.toString();
+	if( Number.isSafeInteger(number) ){ //整数なのでイケる
+		let a=numstr.split(''), b=[], c; //文字ごとの配列
+		while( a.length > 0 ){
+			if( c = a.pop() ){
+				b.unshift(c);
+				if( (b.length & 3) === 3 && a.length > 0 ){
+					//まだ文字が残っていたらコンマをつける
+					b.unshift(",");
+				}
+			}
+		}
+		numstr = b.join('');
+	}
+	return numstr;
+}
+
+//新しい目標
+function renewTargetRabbit(){
+	//目標値の変更
+	let t = GET_ID("targetSelect"), u, v;
+	if(t.selectedIndex===0){ //custom
+		u = GET_ID("customTargetUnit").value;
+		v = GET_ID("customTargetAmount").value;
+	}else{ //preset
+		t = t.selectedOptions[0].value;
+		u = t[0];
+		v = t.substr(1);
+	}
+	if( u==="p" ){
+		u="pt"; gTargetAmount=v*1000; //"p"...単位は千pt
+	}else if( u==="f"){
+		u="人"; gTargetAmount=v*10000; //"f"...単位は万人
+	}else{
+		u="[?]"; gTargetAmount=v*1;
+	}
+	GET_ID("targetValue").lastElementChild.textContent =
+	GET_ID("currentValue").lastElementChild.textContent = u;
+	GET_ID("targetValue").firstElementChild.textContent = stringCommaAdded( gTargetAmount );
+
+	//期間の更新
+	//日付inputの時間は、utcの深夜0時になっている。よって、6時間、12時間進めればOK
+	if( t = GET_ID("startDate").valueAsDate ){ //null対策
+		t.setHours( t.getHours()+6 );
+		gDateStart = t;
+	}
+	if( t = GET_ID("endDate").valueAsDate ){
+		t.setHours( t.getHours()+12 );
+		gDateEnd = t;
+	}
+
+	//かんたんアクセス用URLも更新
+	t = GET_ID("settledURI");
+	u = location.origin + location.pathname +"?"+ generateOptionString();
+	t.textContent = t.href = u;
+
+	if(!gTimerID){ update(); }
+}
+
+//目標選択<select>変更時
+function onChangeTargetSelect(){
+	let b = GET_ID("targetSelect").selectedIndex!==0;
+	GET_ID("customTargetUnit").disabled = b;
+	GET_ID("customTargetAmount").disabled = b;
+	renewTargetRabbit();
+}
+
+//オプション設定用文字列生成
+function generateOptionString(){
+	return gStr32[ gDateStart.getUTCMonth()+1 ]+
+		gStr32[ gDateStart.getUTCDate() ]+
+		gStr32[ gDateEnd.getUTCMonth()+1 ]+
+		gStr32[ gDateEnd.getUTCDate() ]+
+		( GET_ID("targetSelect").selectedIndex===0 ?
+			GET_ID("customTargetUnit").value + GET_ID("customTargetAmount").value :
+			GET_ID("targetSelect").selectedOptions[0].value
+		);
+}
+
+//表示更新
+function update(_t){
+	//console.log(_t);
+	let eventPassedRatio = (Date.now()-gDateStart.getTime()) / (gDateEnd.getTime()-gDateStart.getTime());
+	if( eventPassedRatio < 0 ){
+		eventPassedRatio = 0;
+	}else if( 1 < eventPassedRatio ){
+		eventPassedRatio = 1;
+	}
+	let rabbitValue = gTargetAmount * eventPassedRatio |0;
+	GET_ID("currentValue").firstElementChild.textContent = stringCommaAdded( rabbitValue );
+
+	gTimerID = window.requestAnimationFrame(update); //これで毎描画frameごとに呼ばれる
+}
+
+//-----------------
+// DOM読み込み完了
+//-----------------
+window.addEventListener("DOMContentLoaded",e=>{
+	let strOpt = location.search.substr(1); //一文字目の"?"を読み飛ばす
+	if( strOpt.length > 5 ){
+		manualSetEvent(strOpt);
+	}else{
+		autoSetEvent();
+	}
+});
+
+GET_ID("targetSelect").addEventListener("change",onChangeTargetSelect);
+GET_ID("startDate").addEventListener("change",renewTargetRabbit);
+GET_ID("endDate").addEventListener("change",renewTargetRabbit);
+GET_ID("customTargetUnit").addEventListener("change",renewTargetRabbit);
+GET_ID("customTargetAmount").addEventListener("change",renewTargetRabbit);
+
+</script>
+</body>
+</html>
