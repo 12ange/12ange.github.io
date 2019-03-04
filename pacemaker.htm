@@ -5,7 +5,8 @@
 <title>Starlight Pacer - 各種イベント向けペースメーカー</title>
 <style>
 #eventTitle,#currentValue,#targetValue{ text-align: center }
-#currentValue{ font-size:300% }
+#currentValue{ font-size:300%; position:relative }
+#pseudoUnderline{ background-color:black; height:1px; position:absolute }
 #targetValue{ font-size:150% }
 .amount{ font-size: 2em }
 .unit{ font-size: .7em }
@@ -20,6 +21,7 @@
 -->
 <div id="currentValue">
 	<output class="amount">123456789</output>
+	<div id="pseudoUnderline"></div>
 	<output class="unit">?</output>
 </div>
 <div id="targetValue">目標：
@@ -240,17 +242,18 @@ function generateOptionString(){
 
 //表示更新
 function update(_t){
-	//console.log(_t);
-	let eventPassedRatio = (Date.now()-gDateStart.getTime()) / (gDateEnd.getTime()-gDateStart.getTime());
-	if( eventPassedRatio < 0 ){
-		eventPassedRatio = 0;
-	}else if( 1 < eventPassedRatio ){
-		eventPassedRatio = 1;
-	}
-	let rabbitValue = gTargetAmount * eventPassedRatio |0;
-	GET_ID("currentValue").firstElementChild.textContent = stringCommaAdded( rabbitValue );
+	let eventPassedRatio = (v=>v<0?0:v>1?1:v)(
+		(Date.now()-gDateStart.getTime()) / (gDateEnd.getTime()-gDateStart.getTime())
+	);
+	let [rabbitValue, rabbitFrac] = (()=>{
+		let v = gTargetAmount * eventPassedRatio, i=v|0;
+		return [i,v-i];
+	})();
 
-	gTimerID = window.requestAnimationFrame(update); //これで毎描画frameごとに呼ばれる
+	GET_ID("currentValue").firstElementChild.textContent = stringCommaAdded( rabbitValue );
+	GET_ID("pseudoUnderline").style.width = `${rabbitFrac*100}%`;
+
+	gTimerID = window.requestAnimationFrame(update); //次の描画frameに呼んでもらう
 }
 
 //-----------------
