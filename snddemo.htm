@@ -1,0 +1,267 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,minimum-scale=1">
+<title>時報 - WebAudio と SpeechSynthesis の利用</title>
+
+<style>
+@keyframes fadeNstand {
+	100% { font-size: 0; height: 0; margin: 0; opacity: 0; padding: 0; }
+}
+
+.shrinkable { /*開閉できるクラス*/
+	animation: fadeNstand 1s ease-in-out infinite alternate both;
+}
+button:disabled{ opacity:0.3; }
+
+#divLog{ padding: 0.25em 1em; }
+#divLog p{ margin: 0.1em 0; padding: 0.1em; overflow:hidden; } /*上下の間隔を詰める(見られる初期値は1em)*/
+#divLog p:nth-child(2n){ background-color: #ddd; }
+#divLog p:nth-child(2n+1){ background-color: #eee; }
+</style>
+
+<script>
+//did :ログ表示をtableまたはdivに＋古いログは非表示にし、要求されたら表示する
+//TODO:"show more/less" ボタンは最上部・最下部に設置
+//did :HTMLelement/classで「どういう状態か」を表現し、状態と表示の対応はCSSでとる
+//MAY?:ログが一定数(100くらい？)を超えたら消す
+
+//マクロ (アロー関数による)
+const NEW_TAG = (tag) => document.createElement(tag);
+const GET_ID = (id) => document.getElementById(id);
+
+// AudioContext初期化 by Mozilla
+const gAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+// Webkit/blink系ブラウザは接頭辞が必要、Safariは「window.」をつけないと動かない
+
+// 音量調整の適用先
+const gMasterVol = gAudioCtx.createGain();
+const gSpSyUttr = new SpeechSynthesisUtterance();
+
+//----------------------------------------------------------------
+// ログ管理系列
+//	gDivLog
+//	addLogByString(表示文)
+//	onLogAnimeIterated(event) ... イベントリスナCB
+//----------------------------------------------------------------
+let gDivLog = null;
+
+function addLogByString(_msg){
+	let op = NEW_TAG("p");
+	op.textContent = _msg;
+	gDivLog.insertBefore( op, gDivLog.firstChild );
+	//古いログに表示縮小クラスを仕込む
+	//結果的には、いくつを常時表示にするかが下の引数になる
+	if( op = gDivLog.children.item(5) ){
+		op.addEventListener("animationiteration",onLogAnimeIterated);
+		op.classList.add("shrinkable");
+		//古すぎるログを消す
+		while( gDivLog.childElementCount > 50 ){ gDivLog.removeChild( gDivLog.lastChild ); }
+	}
+};
+
+function onLogAnimeIterated(_ev){
+	const cs = getComputedStyle(this);
+	if( (cs.opacity-0) < .1 ){ //0になる「直前」に呼ばれるみたい
+		this.style.animationPlayState = "paused"
+	}
+	console.log(`[${typeof cs.opacity}] ${cs.opacity}`);
+}
+
+//----------------------------------------------------------------
+// 発音タイミング管理系列
+//	gTimerID
+//	enableConduct(bool) 有効化/無効化
+//	clearConduction()   待機を解消
+//	prepareConduction() [定期的に自己呼び出し]数秒後までに出す音を仕込む
+//----------------------------------------------------------------
+let gTimerID = 0;
+
+function letConduct(_enable){
+	(_enable ? prepareConduction : clearConduction )();
+	//有効化したら、開始ボタンを使用不可に以下略
+	GET_ID("btnStart").disabled = _enable;
+	GET_ID("btnStop").disabled = !_enable;
+	gAudioCtx.resume();
+
+	addLogByString(`[INPUT] ${_enable?"En":"Dis"}abled for telling time signal`);
+}
+
+function clearConduction(){
+	clearTimeout(gTimerID);
+	gTimerID = 0;
+}
+
+function prepareConduction(){
+	const RESERVE = (delay)=>{ gTimerID = setTimeout( prepareConduction, delay ); }
+	let tm, wt, sc;
+
+	if( gTimerID !== 0 ) clearConduction(); //連続して呼ばれてもこれでOK
+
+	tm = new Date();
+	sc = tm.getSeconds();
+	wt = ( (50<=sc ? 110 : 50) - sc ) * 1000 - tm.getMilliseconds();
+	//wtには50秒までの残り時間[ms]
+
+	if( wt <= 1000 )
+	{
+		//50秒から予告を流し、予報～0秒に正報、4秒に
+		let t = gAudioCtx.currentTime + wt*.001, d = gMasterVol;
+		newToneSine( 220, t  , 0.1 ).connect( d );
+		newToneSine( 220, t+1, 0.1 ).connect( d );
+		newToneSine( 220, t+2, 0.1 ).connect( d );
+		newToneSine( 220, t+3, 0.1 ).connect( d );
+		newToneSine( 220, t+4, 0.1 ).connect( d );
+		newToneSine( 220, t+5, 0.1 ).connect( d );
+		newToneSine( 220, t+6, 0.1 ).connect( d );
+		newToneSine( 440, t+7, 0.1 ).connect( d );
+		newToneSine( 440, t+8, 0.1 ).connect( d );
+		newToneSine( 440, t+9, 0.1 ).connect( d );
+		newToneSineWithFO( 880, t+10, 1, 2 ).connect( d );
+		setTimeout( ()=>{
+			let txm, now = new Date();
+			txm = (now.getMinutes()===0 ? "ちょうど" : `${now.getMinutes()}分` );
+			gSpSyUttr.text = `${now.getHours()}時、${txm}を、お知らせしました`;
+			speechSynthesis.speak(gSpSyUttr);
+		}
+		,wt+13000);
+
+		RESERVE(30000); //とりあえず、30秒待ち
+		addLogByString(`[${tm.toLocaleString()}.${tm.getMilliseconds()}] prepared. #${gTimerID}`);
+	}
+	else // 1000 < wt
+	{
+		wt -= 1000; //次の49秒に呼ばれたい(実際には数ms/百数十ms遅れる)
+		RESERVE(wt);
+		addLogByString(`[${tm.toLocaleString()}.${tm.getMilliseconds()}] wt=${wt} #${gTimerID}`);
+	}
+}
+
+//----------------------------------------------------------------
+// !時報用! 新しい正弦波(周波数、開始時間、発音長)
+//	returns OscillatorNode
+//----------------------------------------------------------------
+function newToneSine( _freq, _timeStart, _duration ){
+	let oc = gAudioCtx.createOscillator();
+	oc.type = "sine";
+	oc.frequency.value = _freq;
+	oc.start( _timeStart );
+	oc.stop( _timeStart + _duration );
+	return oc;
+}
+
+//----------------------------------------------------------------
+// !時報用! 新しいフェードアウト(開始時間、FO期間)
+//	returns GainNode
+//----------------------------------------------------------------
+function newFadeOut( _timeStart, _duration ){
+	let gn = gAudioCtx.createGain();
+	gn.gain.setValueAtTime( 1, gAudioCtx.currentTime );
+	gn.gain.setValueAtTime( 1, _timeStart );
+	gn.gain.linearRampToValueAtTime( 0, _timeStart + _duration );
+	return gn;
+}
+
+//----------------------------------------------------------------
+// !時報用! 新しいフェードアウトつき正弦波(周波数、開始時間、keep期間、FO期間)
+//	returns GainNode
+//----------------------------------------------------------------
+function newToneSineWithFO( _freq, _timeStart, _duraKeep, _duraFade ){
+	let gn = newFadeOut( _timeStart + _duraKeep, _duraFade );
+	newToneSine( _freq, _timeStart, _duraKeep + _duraFade ).connect( gn );
+	return gn;
+}
+
+//----------------------------------------------------------------
+// ウィンドウorタブの可視状態が変更されたとき
+//----------------------------------------------------------------
+function updatedVisibility(_ev){
+	let tm = new Date();
+	let msg = `[${tm.toLocaleString()}] `;
+	msg += "webpage-" + (document.hidden ? "hidden" : "shown");
+	addLogByString(msg);
+}
+
+//----------------------------------------------------------------
+// 音量操作部分を更新する
+//----------------------------------------------------------------
+function updateCtrlVolume(_ev){
+	let va,vs; //算出するAudio/Speechの音量
+	const wv = GET_ID("inWholeVol").valueAsNumber; //全体音量
+	const dm = GET_ID("inDimRatio").valueAsNumber; //減衰率
+	const fmt = (n)=>`${(n*1e4|0)/1e2}%`; //表示成型関数
+
+	//indexが 0 ならAudio, 1 ならSpeechを減衰
+	if( GET_ID("slAudioSpeech").selectedIndex === 0 ){
+		va = wv*dm; vs = wv;
+	}else{
+		va = wv; vs = wv*dm;
+	}
+
+	//値を即時反映
+	gMasterVol.gain.setValueAtTime(va, gAudioCtx.currentTime);
+	gSpSyUttr.volume = vs;
+
+	//表示も反映
+	GET_ID("ouWholeVol").value = fmt(wv);
+	GET_ID("ouDimRatio").value = fmt(dm);
+	GET_ID("mtVolAudio").value = va;
+	GET_ID("ouVolAudio").value = fmt(va);
+	GET_ID("mtVolSpeech").value = vs;
+	GET_ID("ouVolSpeech").value = fmt(vs);
+}
+
+//----------------------------------------------------------------
+window.onload = ()=>{
+//----------------------------------------------------------------
+	//発音準備
+	gMasterVol.connect(gAudioCtx.destination);
+
+	//DOMとスクリプトの接続ならびにイベント登録
+	gDivLog = GET_ID("divLog");
+	updatedVisibility(null);
+	letConduct(false);
+	document.addEventListener("visibilitychange",updatedVisibility);
+	GET_ID("ctrlVolume").addEventListener("input",updateCtrlVolume);
+	GET_ID("btnStart").addEventListener("click", (e)=>{letConduct(true);} );
+	GET_ID("btnStop").addEventListener("click", (e)=>{letConduct(false);} );
+};
+//----------------------------------------------------------------
+</script>
+</head>
+<body>
+<button id="btnStart"><span style="color:green">▶</span> 時報を鳴らす</button>
+<button id="btnStop"><span style="color:red">■</span> 時報を止める</button>
+<form id="ctrlVolume"><fieldset>
+	<legend>音量操作</legend>
+	<span>全体音量</span>
+	<input  id="inWholeVol" type="range" min="0" max="1" step="0.01" value="1">
+	<output id="ouWholeVol" for="inWholeVol">100%</output>
+	<br>
+	<select id="slAudioSpeech">
+		<option selected>時報音を小さくする</option>
+		<option>時刻読みを小さくする</option>
+	</select>
+	<input  id="inDimRatio" type="range" min="0" max="1" step="0.01" value="1">
+	<output id="ouDimRatio" for="inDimRatio">100%</output>
+	<br>
+	<table>
+		<caption>最終音量(計算結果)</caption>
+		<tr>
+			<td>時報音</td>
+			<td><meter  id="mtVolAudio"  min="0" max="1" value="1">1</meter></td>
+			<td><output id="ouVolAudio" for="mtVolAudio">100%</output></td>
+		</tr>
+		<tr>
+			<td>時刻読み</td>
+			<td><meter  id="mtVolSpeech" min="0" max="1" value="1">1</meter></td>
+			<td><output id="ouVolSpeech" for="mtVolSpeech">100%</output></td>
+		</tr>
+	</table>
+</fieldset></form>
+<div><em>informations</em></div>
+<div id="divLog"></div>
+<div><em>code &quot;show more/less&quot;</em></div>
+</body>
+</html>
