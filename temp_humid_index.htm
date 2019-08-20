@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,minimum-scale=1">
 <title>温湿度計の値から各種指数を算出</title>
+<script defer src="https://twemoji.maxcdn.com/v/latest/twemoji.min.js" crossorigin="anonymous"></script>
 <style>
 input:valid {background-color:white;color:black}
 input:invalid {background-color:black;color:white}
+img.emoji {height:1em; margin:0 .05em 0 .1em; vertical-align:-0.1em; width:1em}
 </style>
 </head>
 <body><!--
@@ -82,7 +84,7 @@ e = E(t)*h/100 ... 上式をeについて：温湿度計の読み取り
 		<tr><td>💧　 相対湿度</td><td id="oRelHumid">0</td><td>%</td><td>測定値</td></tr>
 	</table>
 </fieldset>
-
+<p>絵文字は<a href="https://github.com/twitter/twemoji">Twemoji</a>をお借りしています。</p>
 <script>
 "use strict";
 //================ 各種方程式やサブルーチン ================//
@@ -224,6 +226,7 @@ function recalculate(){
 		let rank = value_rank(_aBorder,_value);
 		elmO.textContent = _value;
 		elmX.textContent = xofy(rank+1,_aMessage.length,"⚠▪") +" "+ _aMessage[rank];
+		twemoji.parse(elmX); //twemoji installed
 	};
 	subroutine("TmpHmdIdx",border_thix,message_thix,thix);
 	subroutine("HeatIndex",border_heat,message_heat,heat);
@@ -231,6 +234,8 @@ function recalculate(){
 }
 
 window.addEventListener("load",()=>{
+	twemoji.parse(document.body); //twemoji installed
+
 	const iTemp = GET_ID("iTemp");
 	const iHumid = GET_ID("iHumid");
 	GET_ID("limitTemp").textContent = `(${iTemp.min}~${iTemp.max}${iTemp.nextElementSibling.textContent})`;
