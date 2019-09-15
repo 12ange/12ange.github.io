@@ -14,17 +14,32 @@
 	text-align:center;
 	width:50vmin;
 }
+.pseudobutton>div{
+	display:inline-flex;
+	justify-content:center;
+	align-items:center;
+	height:100%;
+	width:100%;
+	pointer-events:none;
+}
 .pseudobutton.down{
 	border-style:inset;
 	border-color:#9f9;
 	background-color:#bfb;
-	}
+}
 </style>
 </head>
 <body>
 <h1>BOXENHUPE NÜRBURGRING</h1>
 <h3>ニュル24h視聴中に時折聞こえる、競技車両がピットレーンに入ってきたときの警告音</h3>
-<div class="pseudobutton">＜))) ポヨヨヨヨヨヨヨ</div>
+<div class="pseudobutton">
+	<div>
+		<span>＜))) ポヨヨヨヨヨヨヨ</span>
+	</div>
+</div>
+<!--
+公式 https://www.nuerburgring.de/en/fans-info/interactive/downloads/mobile-handy.html
+-->
 <!--
 <fieldset>
 	<legend>オプション</legend>
@@ -37,10 +52,9 @@
 -->
 <script>
 "use strict";
-const	divHooter = document.getElementsByClassName("pseudobutton")[0],
-	gAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const divHooter = document.getElementsByClassName("pseudobutton")[0],
+      gAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let oscMain=null, oscDet=null, isPreplay=true, isPlaying=false;
-
 
 function startHooter(e){
 	if(isPreplay){
@@ -57,6 +71,12 @@ function startHooter(e){
 	oscMain.frequency.value = 880;
 	gain.gain.value = 125;
 	oscDet.frequency.value = 7;
+	/*
+	  + 基底周波数は多分合ってる。
+	  ++ 基底波形は通りの良いsineがオススメだが、本物に近づけたいならcustomで(パラメタは正弦波を方形波に近づける感じだと思う)。
+	  + detune周波数は7~7.5?(よくわからん、8だとちょっと速く感じる)。
+	  + detune振動幅は大きくするとより気を引けるがやり過ぎる(300centあたり?)と警察っぽくなるので難しい。
+	*/
 
 	//接続
 	oscMain.connect(gAudioCtx.destination);
@@ -82,9 +102,14 @@ function stopHooter(e){
 	divHooter.classList.remove("down");
 }
 
+//マウスの場合
 divHooter.addEventListener("mousedown",startHooter);
 divHooter.addEventListener("mouseup",stopHooter);
 divHooter.addEventListener("mouseleave",stopHooter);
+//タッチパネルの場合
+divHooter.addEventListener("touchstart",startHooter);
+divHooter.addEventListener("touchend",stopHooter);
+divHooter.addEventListener("touchcancel",stopHooter);
 
 </script>
 </body>
