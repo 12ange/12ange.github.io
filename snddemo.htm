@@ -79,13 +79,26 @@ function onLogAnimeIterated(_ev){
 let gTimerID = 0;
 
 function letConduct(_enable){
-	(_enable ? prepareConduction : clearConduction )();
-	//有効化したら、開始ボタンを使用不可に以下略
-	GET_ID("btnStart").disabled = _enable;
-	GET_ID("btnStop").disabled = !_enable;
 	gAudioCtx.resume();
-
+	(_enable ? prepareConduction : clearConduction )();
+	updateButtons(_enable);
 	addLogByString(`[INPUT] ${_enable?"En":"Dis"}abled for telling time signal`);
+}
+
+function getTextTimeSignal(_date){
+	//与えられた時刻を読み上げ文にする
+	if( _date instanceof Date ){
+		let t, s=_date.getSeconds(), m=_date.getMinutes();
+		if( s===0 ){
+			t=(m===0 ? "ちょうど" : `${m}分` )+"を、お知らせしました";
+		}else{
+			t=`${m}分、${s}秒です`;
+		}
+		return `${_date.getHours()}時、${t}`;
+	}else{
+		console.error(`getTextTimeSignal() がDate型ではない値を受け取りました(${typeof _date}型)`);
+		return null;
+	}
 }
 
 function clearConduction(){
@@ -120,9 +133,7 @@ function prepareConduction(){
 		newToneSine( 440, t+9, 0.1 ).connect( d );
 		newToneSineWithFO( 880, t+10, 1, 2 ).connect( d );
 		setTimeout( ()=>{
-			let txm, now = new Date();
-			txm = (now.getMinutes()===0 ? "ちょうど" : `${now.getMinutes()}分` );
-			gSpSyUttr.text = `${now.getHours()}時、${txm}を、お知らせしました`;
+			gSpSyUttr.text = getTextTimeSignal(new Date());
 			speechSynthesis.speak(gSpSyUttr);
 		}
 		,wt+13000);
@@ -136,6 +147,24 @@ function prepareConduction(){
 		RESERVE(wt);
 		addLogByString(`[${tm.toLocaleString()}.${tm.getMilliseconds()}] wt=${wt} #${gTimerID}`);
 	}
+}
+
+function playTestSignal(){
+	//ボタンを全部止める
+	GET_ID("btnStart").disabled = true;
+	GET_ID("btnTest").disabled = true;
+	newToneSine( 1760, gAudioCtx.currentTime, 0.1 ).connect( gMasterVol );
+	gSpSyUttr.text = getTextTimeSignal(new Date());
+	speechSynthesis.speak(gSpSyUttr);
+
+	const g = ()=>{
+		if(speechSynthesis.speaking){
+			setTimeout(g,100); //再生終了を待つ
+		}else{
+			updateButtons(false); //再生終了後ボタンを「停止状態」に戻す
+		}
+	}
+	setTimeout(g,100);
 }
 
 //----------------------------------------------------------------
@@ -171,6 +200,15 @@ function newToneSineWithFO( _freq, _timeStart, _duraKeep, _duraFade ){
 	let gn = newFadeOut( _timeStart + _duraKeep, _duraFade );
 	newToneSine( _freq, _timeStart, _duraKeep + _duraFade ).connect( gn );
 	return gn;
+}
+
+//----------------------------------------------------------------
+// ボタン状態の変更(時報が有効化されたとき？)
+//----------------------------------------------------------------
+function updateButtons( _whenEnabled ){
+	GET_ID("btnStart").disabled = _whenEnabled;
+	GET_ID("btnStop").disabled = !_whenEnabled;
+	GET_ID("btnTest").disabled = _whenEnabled;
 }
 
 //----------------------------------------------------------------
@@ -221,11 +259,12 @@ window.onload = ()=>{
 	//DOMとスクリプトの接続ならびにイベント登録
 	gDivLog = GET_ID("divLog");
 	updatedVisibility(null);
-	letConduct(false);
+	updateButtons(false);
 	document.addEventListener("visibilitychange",updatedVisibility);
 	GET_ID("ctrlVolume").addEventListener("input",updateCtrlVolume);
 	GET_ID("btnStart").addEventListener("click", (e)=>{letConduct(true);} );
 	GET_ID("btnStop").addEventListener("click", (e)=>{letConduct(false);} );
+	GET_ID("btnTest").addEventListener("click", playTestSignal );
 };
 //----------------------------------------------------------------
 </script>
@@ -233,6 +272,7 @@ window.onload = ()=>{
 <body>
 <button id="btnStart"><span style="color:green">▶</span> 時報を鳴らす</button>
 <button id="btnStop"><span style="color:red">■</span> 時報を止める</button>
+<button id="btnTest"><span style="color:blue">♪</span> 現在時刻を聞く</button>
 <form id="ctrlVolume"><fieldset>
 	<legend>音量操作</legend>
 	<span>全体音量</span>
