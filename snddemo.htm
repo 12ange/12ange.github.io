@@ -133,7 +133,7 @@ function prepareConduction(){
 		newToneSine( 440, t+9, 0.1 ).connect( d );
 		newToneSineWithFO( 880, t+10, 1, 2 ).connect( d );
 		setTimeout( ()=>{
-			gSpSyUttr.text = getTextTimeSignal(new Date());
+			gSpSyUttr.text = getTextTimeSignal( new Date( tm.getTime()+wt+10000 ) );
 			speechSynthesis.speak(gSpSyUttr);
 		}
 		,wt+13000);
