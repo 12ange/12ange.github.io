@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Test File</title>
+<style>
+#dropzone{ border: 1px dashed gray;}
+output{ display: block; }
+#fdatahex{ font-family: 'Courier New', Courier, monospace; font-size: 125%;}
+</style>
+</head>
+<body>
+	<div id="dropzone">
+		<input type="file" id="fileinput" disabled>
+		<output id="finfo">finfo</output>
+		<output id="fdatahex">fdatahex</output>
+	</div>
+<script>
+"use strict";
+//const NEW_TAG = (tag) => document.createElement(tag);
+const GET_ID = (id) => document.getElementById(id);
+
+//ファイル読み取り
+function handleFiles( _flist ){
+	let oneFile = _flist[0];
+	GET_ID("finfo").textContent = `${oneFile.name} (${oneFile.size} bytes)`;
+	GET_ID("fdatahex").textContent = "loading...";
+	let frdr = new FileReader();
+	frdr.onload = e => {
+
+		//will:テーブルにする。左セルが16進数、右セルが文字
+		//let s = new Uint8Array(e.target.result); //ArrayBufferをUint8Arrayとして読み取り
+
+		let a = Array.from(
+			new Uint8Array(e.target.result), //ArrayBufferをUint8Arrayとして読み取り、更にArrayに変換
+			v=>("0"+(v|0).toString(16)).slice(-2) //そして、値を2桁の16進数に変換(※)
+		);	// (※ 前に0を挿入して後ろから2文字を取り出すことでzero-fillできる)
+
+		let i=0, s="";
+		while( a.length>0 ){
+			i++;
+			s += a.shift() + (i&15 ? " " : "<br>");
+		}
+		GET_ID("fdatahex").innerHTML = s;
+	}
+	frdr.readAsArrayBuffer(oneFile);
+}
+
+//何も起こさ(せ)ない
+function noActionTaken(event){
+	event.stopPropagation();
+	event.preventDefault();
+}
+document.body.addEventListener("dragenter",noActionTaken);
+document.body.addEventListener("dragover",noActionTaken);
+document.body.addEventListener("drop",noActionTaken);
+
+//ファイル読み込みがイケるときのみ、ファイルインプット有効化とイベント登録を行う
+if(window.File && window.FileReader && window.FileList && window.Blob){
+	let elm = GET_ID("fileinput")
+	elm.disabled = false;
+	elm.addEventListener("change", ev =>{ handleFiles( ev.target.files ); });
+
+	elm = GET_ID("dropzone");
+	elm.addEventListener("drop", ev =>{
+		noActionTaken(ev);
+		handleFiles( ev.dataTransfer.files );
+	});
+}
+</script>
+</body>
+</html>
