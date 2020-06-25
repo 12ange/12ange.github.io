@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>PNG to 32bit(ARGB)BMP</title>
+<style>
+#dropzone{ border: 1px dashed gray;}
+output{ display: block; }
+</style>
+</head>
+<body>
+	<div id="dropzone">
+		<input type="file" id="fileinput" disabled>
+		<output id="finfo">finfo</output>
+		<a id="anchor" href="#", download="new.bmp" style="display:none"></a>
+		<output id="thumb">thumb</output>
+	</div>
+<script>
+"use strict";
+const NEW_TAG = tag => document.createElement(tag);
+const GET_ID = id => document.getElementById(id);
+
+//ファイル読み取り
+function handleFiles( filelist ){
+	const outthumb = GET_ID("thumb");
+	while( outthumb.lastChild ){ outthumb.removeChild(outthumb.lastChild) }
+	const oneFile = filelist[0];
+	if( oneFile.type === "image/png" ){
+		GET_ID("finfo").textContent = `${oneFile.name} (${oneFile.size} bytes)`;
+		createImageBitmap(oneFile).then( ibm => {
+			const cnvs = NEW_TAG("canvas");
+			cnvs.width = ibm.width;
+			cnvs.height = ibm.height;
+			const ctx = cnvs.getContext("2d");
+			//memo:bmpのY軸は上向きなので、上下反転して描く
+			ctx.save();
+			ctx.setTransform(1,0,0,-1,0,ibm.height);
+			ctx.drawImage(ibm,0,0);
+			ctx.restore();
+			GET_ID("thumb").appendChild(cnvs);
+			const bitmap = imageData2bitmap( ctx.getImageData(0,0,cnvs.width,cnvs.height) );
+			saveAsBMPFile( bitmap, oneFile.name.slice(0,-4) );
+		})
+	}else{
+		GET_ID("finfo").textContent = `[ERROR] ${oneFile.name} is NOT image/png.`;
+	}
+}
+
+function imageData2bitmap( imagedata ){
+	//定数定義ならびにバッファ作成
+	const SIZE_FILEHEADER = 14, OFFSET_FILEHEADER = 0;
+	const SIZE_INFOHEADER = 40, OFFSET_INFOHEADER = SIZE_FILEHEADER;
+	const OFFSET_IMAGEDATA = OFFSET_INFOHEADER+SIZE_INFOHEADER;
+	const bitmapbuffer = new ArrayBuffer( OFFSET_IMAGEDATA + imagedata.data.length ); //まとめて確保
+
+	//ファイルヘッダを構成する
+	const fileheader = new Uint8Array(bitmapbuffer, OFFSET_FILEHEADER, SIZE_FILEHEADER);
+	fileheader[0] = 0x42;
+	fileheader[1] = 0x4D;
+	fileheader[2] = bitmapbuffer.byteLength & 0xff;
+	fileheader[3] = (bitmapbuffer.byteLength >>> 8)& 0xff;
+	fileheader[4] = (bitmapbuffer.byteLength >>> 16)& 0xff;
+	fileheader[5] = (bitmapbuffer.byteLength >>> 24)& 0xff;
+	fileheader[10] = OFFSET_IMAGEDATA & 0xff;
+	fileheader[11] = (OFFSET_IMAGEDATA >>> 8)& 0xff;
+	fileheader[12] = (OFFSET_IMAGEDATA >>> 16)& 0xff;
+	fileheader[13] = (OFFSET_IMAGEDATA >>> 24)& 0xff;
+
+	//情報ヘッダを構成する(BITMAPCOREHEADER形式)
+	const infoheader = new Uint8Array(bitmapbuffer, OFFSET_INFOHEADER, SIZE_INFOHEADER);
+	infoheader[0] = SIZE_INFOHEADER;
+	infoheader[4] = imagedata.width & 0xff;
+	infoheader[5] = (imagedata.width >>> 8)& 0xff;
+	infoheader[8] = imagedata.height & 0xff;
+	infoheader[9] = (imagedata.height >>> 8)& 0xff;
+	infoheader[12] = 1;
+	infoheader[14] = 32;
+	infoheader[20] = imagedata.data.length & 0xff;
+	infoheader[21] = (imagedata.data.length >>> 8)& 0xff;
+	infoheader[22] = (imagedata.data.length >>> 16)& 0xff;
+	infoheader[23] = (imagedata.data.length >>> 24)& 0xff;
+
+	//ピクセル毎情報配列
+	const dibpayload = new Uint8Array(bitmapbuffer, OFFSET_IMAGEDATA);
+	for(let i=0; i<imagedata.data.length; i+=4){
+		// bmpはBGRA｜ImageData.dataはRGBA
+		dibpayload[ i ] = imagedata.data[i+2];
+		dibpayload[i+1] = imagedata.data[i+1];
+		dibpayload[i+2] = imagedata.data[ i ];
+		dibpayload[i+3] = imagedata.data[i+3];
+	}
+
+	return bitmapbuffer;
+}
+
+function saveAsBMPFile(arrbuf,newFileName){
+	const gURL = window.URL || window.webkitURL;
+	const anch = GET_ID("anchor");
+	anch.href = gURL.createObjectURL( new Blob( [arrbuf], {type: "octet/stream"}) );
+	anch.download = newFileName+".bmp";
+	anch.click();
+	gURL.revokeObjectURL(anch.href);
+	anch.href = "#";
+}
+
+//何も起こさ(せ)ない
+function noActionTaken(event){
+	event.stopPropagation();
+	event.preventDefault();
+}
+document.body.addEventListener("dragenter",noActionTaken);
+document.body.addEventListener("dragover",noActionTaken);
+document.body.addEventListener("drop",noActionTaken);
+
+//ファイル読み込みがイケるときのみ、ファイルインプット有効化とイベント登録を行う
+if(window.File && window.FileReader && window.FileList && window.Blob){
+	let elm = GET_ID("fileinput")
+	elm.disabled = false;
+	elm.addEventListener("change", ev =>{ handleFiles( ev.target.files ); });
+
+	elm = GET_ID("dropzone");
+	elm.addEventListener("drop", ev =>{
+		noActionTaken(ev);
+		handleFiles( ev.dataTransfer.files );
+	});
+}
+</script>
+</body>
+</html>
