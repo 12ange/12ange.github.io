@@ -129,7 +129,7 @@ function debug_audio_index(n){
 	}
 }
 
-document.addEventListener("domContentLoaded",()=>{
+window.addEventListener("load",()=>{
 	document.body.append(logzone);
 	createDatabase().then(e=>{
 		logzone.addLine(e);
