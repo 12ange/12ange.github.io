@@ -22,6 +22,7 @@ button:disabled{ opacity:0.3; }
 </style>
 
 <script>
+"use strict";
 //did :ログ表示をtableまたはdivに＋古いログは非表示にし、要求されたら表示する
 //TODO:"show more/less" ボタンは最上部・最下部に設置
 //did :HTMLelement/classで「どういう状態か」を表現し、状態と表示の対応はCSSでとる
@@ -119,7 +120,7 @@ function prepareConduction(){
 
 	if( wt <= 1000 )
 	{
-		//50秒から予告を流し、予報～0秒に正報、4秒に
+		//50秒から予告を流し、予報～0秒に正報、3秒に読み上げ
 		let t = gAudioCtx.currentTime + wt*.001, d = gMasterVol;
 		newToneSine( 220, t  , 0.1 ).connect( d );
 		newToneSine( 220, t+1, 0.1 ).connect( d );
