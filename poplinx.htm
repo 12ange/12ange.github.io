@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>NEWHTMLFILE</title>
+<style>
+/* CSSはここに */
+</style>
+
+<script>
+"use strict";
+
+const uriRoot = "https://poplinks.idolmaster-official.jp/";
+
+const logzone = document.createElement("textarea");
+logzone.readOnly = true;
+logzone.addLine = s=>{ logzone.value += s+"\n" }
+logzone.addWord = s=>{ logzone.value += s+" " }
+
+class TIdol {
+	constructor(cid,name,cv,brand,attr1,attr2){
+		//型チェックは厳しめに
+		if( typeof cid === "string" && cid.length === 8 ){
+			this.cid = cid;
+		}else{
+			throw new TypeError("引数[0] must be 8文字")
+		}
+		if( typeof name === "string" ){
+			this.name = name;
+		}else{
+			throw new TypeError("引数[1] must be 文字列")
+		}
+		if( typeof cv === "string" ){
+			this.cv = cv;
+		}else{
+			throw new TypeError("引数[2] must be 文字列")
+		}
+		let n = parseInt(brand,10);
+		if( !isNaN(n) && n > 0 ){
+			this.brandIndex = n;
+		}else{
+			throw new TypeError("引数[3] must be 自然数を表す数値か文字列")
+		}
+		if( typeof attr1 === "string"){
+			if( typeof attr2 === "string" ){
+				this.attributes = [attr1,attr2];
+			}else{
+				throw new TypeError("引数[5] must be 文字列")
+			}
+		}else{
+			throw new TypeError("引数[4] must be 文字列")
+		}
+	}
+	get href_thumb (){ return `${uriRoot}images/idol/${this.cid}/img_thumb.png`      }//写真
+	get href_cocos (){ return `${uriRoot}images/idol/${this.cid}/img_chara_02.png`   }//共通衣装
+	get href_tcall (){ return `${uriRoot}images/idol/${this.cid}/voice_01.m4a`       }//タイトルコール
+	get href_attr1 (){ return `${uriRoot}images/idol/attribute/ico_${this.attr1}.png`}//属性1
+	get href_attr2 (){ return `${uriRoot}images/idol/attribute/ico_${this.attr2}.png`}//属性2
+	get href_brand (){ return `${uriRoot}images/idol/images/idol/img_brand_0${this.brandIndex}.png`}//ブランド
+}
+
+let idolsVoiced = [];
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let audioBuffers = [];
+
+async function createDatabase(){
+	const uriList = uriRoot+"idol/index.php?sh=true&sh_o=bU&page=";
+	const uriChar = uriRoot+"idol/detail.php?ch=";
+	let arrCID = [], pageNo = 0;
+
+	//検索トップをDOM化してページ数を確認する
+	let divDummy = document.createElement("div");
+	divDummy.innerHTML = await fetch(uriList+"0").then(r=>r.text());
+	const maxPage = divDummy.querySelector("ul.pager").childElementCount - 2;
+
+	//各ページのアイドルリストからcharIDの羅列を得る
+	while( pageNo <= maxPage ){
+		const idli = divDummy.querySelector("ul#idolList");
+		if( idli ){
+			let ac = [...idli.children].map(e=>e.firstElementChild.href.slice(-8));
+			arrCID.push(...ac);
+			if( ++pageNo <= maxPage ){
+				divDummy.innerHTML = await fetch(uriList+pageNo).then(r=>r.text());
+			}
+		}else{break}
+	}
+
+	//charIDの羅列を元に各個人ページにアクセスし必要な情報を収集する
+	for (const cid of arrCID) {
+		divDummy.innerHTML = await fetch(uriChar+cid).then(r=>r.text());
+		const divProf = divDummy.querySelector("div#profCol");
+		const name = divProf.querySelector("h2").innerText;
+		const audios = divProf.querySelector("ul#audio_area");
+		const flagCV = audios ? audios.childElementCount > 0 : false;
+		logzone.addLine(`cid:${cid}=>"${name}" ... ${flagCV?"ready-":"pre"}voiced`);
+		if(flagCV){
+			const cvName = divProf.querySelector("p#cv").innerText.split("/")[1].trim();
+			const brandID = divProf.className.slice(-2);
+			const aa = divProf.querySelector("ul#attributeCol").children;
+			const [attr1,attr2] = [aa[0],aa[1]].map(e=>
+				e.firstElementChild["src"].split("/").pop().slice(4,-4)
+			);
+			idolsVoiced.push( new TIdol(cid,name,cvName,brandID,attr1,attr2) );
+			logzone.addLine( "-> idolsVoiced# "+idolsVoiced.length )
+		}
+	}
+
+	return `${arrCID.length}人のうち${idolsVoiced.length}人`;
+}
+
+//※サーバに負荷をかけないために、わざとリニアアクセスです
+async function fetchAudiosLinear(){
+	for (const idol of idolsVoiced) {
+		logzone.addWord( idolsVoiced.length - audioBuffers.length ); //countdown
+		audioBuffers.push(
+			await fetch(idol.href_tcall).
+				then(r=>r.arrayBuffer()).
+				then(r=>audioContext.decodeAudioData(r))
+		);
+	}
+}
+
+function debug_audio_index(n){
+	if (audioBuffers[n]) {
+		let bfsrc = audioContext.createBufferSource();
+		bfsrc.buffer = audioBuffers[n];
+		bfsrc.connect(audioContext.destination);
+		bfsrc.start();
+	}
+}
+
+document.addEventListener("domContentLoaded",()=>{
+	document.body.append(logzone);
+	createDatabase().then(e=>{
+		logzone.addLine(e);
+		return fetchAudiosLinear();
+	}).then( e=>{
+		logzone.addLine("READY!")
+	})
+});
+</script>
+</head>
+
+<body>
+</body>
+</html>
