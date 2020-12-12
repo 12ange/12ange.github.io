@@ -2,9 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>NEWHTMLFILE</title>
+<title>poplinx.htm</title>
 <style>
-/* CSSはここに */
+img.snapshot {max-height: 200px}
 </style>
 
 <script>
@@ -12,135 +12,160 @@
 
 const uriRoot = "https://poplinks.idolmaster-official.jp/";
 
-const logzone = document.createElement("textarea");
-logzone.readOnly = true;
-logzone.addLine = s=>{ logzone.value += s+"\n" }
-logzone.addWord = s=>{ logzone.value += s+" " }
-
-class TIdol {
-	constructor(cid,name,cv,brand,attr1,attr2){
-		//型チェックは厳しめに
-		if( typeof cid === "string" && cid.length === 8 ){
-			this.cid = cid;
-		}else{
-			throw new TypeError("引数[0] must be 8文字")
-		}
-		if( typeof name === "string" ){
-			this.name = name;
-		}else{
-			throw new TypeError("引数[1] must be 文字列")
-		}
-		if( typeof cv === "string" ){
-			this.cv = cv;
-		}else{
-			throw new TypeError("引数[2] must be 文字列")
-		}
-		let n = parseInt(brand,10);
-		if( !isNaN(n) && n > 0 ){
-			this.brandIndex = n;
-		}else{
-			throw new TypeError("引数[3] must be 自然数を表す数値か文字列")
-		}
-		if( typeof attr1 === "string"){
-			if( typeof attr2 === "string" ){
-				this.attributes = [attr1,attr2];
-			}else{
-				throw new TypeError("引数[5] must be 文字列")
-			}
-		}else{
-			throw new TypeError("引数[4] must be 文字列")
-		}
-	}
-	get href_thumb (){ return `${uriRoot}images/idol/${this.cid}/img_thumb.png`      }//写真
-	get href_cocos (){ return `${uriRoot}images/idol/${this.cid}/img_chara_02.png`   }//共通衣装
-	get href_tcall (){ return `${uriRoot}images/idol/${this.cid}/voice_01.m4a`       }//タイトルコール
-	get href_attr1 (){ return `${uriRoot}images/idol/attribute/ico_${this.attr1}.png`}//属性1
-	get href_attr2 (){ return `${uriRoot}images/idol/attribute/ico_${this.attr2}.png`}//属性2
-	get href_brand (){ return `${uriRoot}images/idol/images/idol/img_brand_0${this.brandIndex}.png`}//ブランド
-}
-
-let idolsVoiced = [];
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-let audioBuffers = [];
-
-async function createDatabase(){
+const crawlerScript = `(async ()=>{
+	const uriRoot = "${uriRoot}";
 	const uriList = uriRoot+"idol/index.php?sh=true&sh_o=bU&page=";
 	const uriChar = uriRoot+"idol/detail.php?ch=";
-	let arrCID = [], pageNo = 0;
+	let arrCID=[], pageNo=0, arrIV=[];
 
-	//検索トップをDOM化してページ数を確認する
-	let divDummy = document.createElement("div");
-	divDummy.innerHTML = await fetch(uriList+"0").then(r=>r.text());
-	const maxPage = divDummy.querySelector("ul.pager").childElementCount - 2;
+	const substringWith = (src,wordBegin,wordEnd)=>{
+		let idxBegin = src.indexOf(wordBegin), idxEnd = -1;
+		if(idxBegin>=0){
+			idxEnd = src.indexOf(wordEnd, idxBegin)+wordEnd.length;
+		}
+		return idxEnd>0 ? src.substring(idxBegin,idxEnd) :"";
+	};
+	const allSubstringsWith = (src,wordBegin,wordEnd)=>{
+		let results=[];
+		let idxBegin = src.indexOf(wordBegin), idxEnd = -1;
+		while(idxBegin>=0){
+			idxEnd = src.indexOf(wordEnd, idxBegin)+wordEnd.length;
+			if(idxEnd>0){
+				results.push( src.substring(idxBegin,idxEnd) );
+			}else{break}
+			idxBegin = src.indexOf(wordBegin, idxEnd);
+		}
+		return results;
+	};
+
+	//検索トップを文字列化してページ数を確認する
+	let strHtml = await fetch(uriList+"0").then(r=>r.text());
+	const maxPage = allSubstringsWith(
+		substringWith(strHtml,"<ul class=\"pager","</ul>"),
+		"<a ",">").length-2; //最初のページと[次]ボタンの分を引く
 
 	//各ページのアイドルリストからcharIDの羅列を得る
 	while( pageNo <= maxPage ){
-		const idli = divDummy.querySelector("ul#idolList");
-		if( idli ){
-			let ac = [...idli.children].map(e=>e.firstElementChild.href.slice(-8));
-			arrCID.push(...ac);
-			if( ++pageNo <= maxPage ){
-				divDummy.innerHTML = await fetch(uriList+pageNo).then(r=>r.text());
-			}
-		}else{break}
+		arrCID.push(...allSubstringsWith(
+			substringWith(strHtml,"<ul id=\"idolList","</ul>"),
+			"<a ",">").map(s=>s.slice(-10,-2))
+		);
+		if( ++pageNo <= maxPage ){
+			strHtml = await fetch(uriList+pageNo).then(r=>r.text());
+		}
 	}
 
 	//charIDの羅列を元に各個人ページにアクセスし必要な情報を収集する
 	for (const cid of arrCID) {
-		divDummy.innerHTML = await fetch(uriChar+cid).then(r=>r.text());
-		const divProf = divDummy.querySelector("div#profCol");
-		const name = divProf.querySelector("h2").innerText;
-		const audios = divProf.querySelector("ul#audio_area");
-		const flagCV = audios ? audios.childElementCount > 0 : false;
-		logzone.addLine(`cid:${cid}=>"${name}" ... ${flagCV?"ready-":"pre"}voiced`);
+		strHtml = await fetch(uriChar+cid).then(r=>r.text());
+		let hedding = substringWith(strHtml,"<h2","/h2>");
+		let name = substringWith(hedding,">","<").slice(1,-1);;
+		let flagCV = substringWith(strHtml,"<ul id=\"audio_area","/ul>").split("\n").length > 2;
+		console.log("cid: "+cid+" => "+name+" ... "+(flagCV?"ready-":"pre")+"voiced");
 		if(flagCV){
-			const cvName = divProf.querySelector("p#cv").innerText.split("/")[1].trim();
-			const brandID = divProf.className.slice(-2);
-			const aa = divProf.querySelector("ul#attributeCol").children;
-			const [attr1,attr2] = [aa[0],aa[1]].map(e=>
-				e.firstElementChild["src"].split("/").pop().slice(4,-4)
-			);
-			idolsVoiced.push( new TIdol(cid,name,cvName,brandID,attr1,attr2) );
-			logzone.addLine( "-> idolsVoiced# "+idolsVoiced.length )
+			let cvName = substringWith(
+				substringWith(strHtml,"<p id=\"cv","/p>"),">","<"
+				).slice(1,-1).trim().split("/")[1].trim();
+			let [attr1,attr2,brandID] = allSubstringsWith(
+				substringWith(strHtml,"<ul id=\"attributeCol","</ul>"), "src=", "\" "
+			).map(s=> s.split("\"")[1].split("/").pop().slice(0,-4).split("_").pop());
+			arrIV.push({
+				"cid":cid,
+				"name":name,
+				"cv":cvName,
+				"brand":brandID,
+				"attr1":attr1,
+				"attr2":attr2
+			});
+			console.log( "-> idolsVoiced# "+arrIV.length )
 		}
 	}
+	console.log(arrCID.length+"人のうち"+arrIV.length+"人")
+	return arrIV;
+})().then(a=>{console.info(JSON.stringify(a))})`;
 
-	return `${arrCID.length}人のうち${idolsVoiced.length}人`;
-}
+//稼働直前状態(on 2020/12/12, 75人版)にcrawlした結果のJSON
+const json075 = `[{"cid":"ku226nyj","name":"秋月 律子","cv":"若林 直美","brand":"01","attr1":"moon","attr2":"thunder"},{"cid":"wtw2skw8","name":"天海 春香","cv":"中村 繪里子","brand":"01","attr1":"flower","attr2":"ocean"},{"cid":"vahu1gvo","name":"我那覇 響","cv":"沼倉 愛美","brand":"01","attr1":"wind","attr2":"ocean"},{"cid":"9gsez5x9","name":"菊地 真","cv":"平田 宏美","brand":"01","attr1":"fire","attr2":"dream"},{"cid":"sf4sntls","name":"如月 千早","cv":"今井 麻美","brand":"01","attr1":"sky","attr2":"rainbow"},{"cid":"dfmdztgh","name":"四条 貴音","cv":"原 由実","brand":"01","attr1":"sky","attr2":"moon"},{"cid":"v9fojp96","name":"高槻 やよい","cv":"仁後 真耶子","brand":"01","attr1":"heaven","attr2":"light"},{"cid":"io7lyiql","name":"萩原 雪歩","cv":"浅倉 杏美","brand":"01","attr1":"snow","attr2":"light"},{"cid":"dyh97vlo","name":"双海 亜美","cv":"下田 麻美","brand":"01","attr1":"fire","attr2":"rainbow"},{"cid":"x1uvrcnp","name":"双海 真美","cv":"下田 麻美","brand":"01","attr1":"moon","attr2":"rainbow"},{"cid":"dyy4y1vn","name":"星井 美希","cv":"長谷川 明子","brand":"01","attr1":"moon","attr2":"star"},{"cid":"6tsopd31","name":"三浦 あずさ","cv":"たかはし 智秋","brand":"01","attr1":"flower","attr2":"love"},{"cid":"yump5ec3","name":"水瀬 伊織","cv":"釘宮 理恵","brand":"01","attr1":"thunder","attr2":"ocean"},{"cid":"ig73jlxi","name":"アナスタシア","cv":"上坂 すみれ","brand":"02","attr1":"sky","attr2":"snow"},{"cid":"gh6xbvw4","name":"一ノ瀬 志希","cv":"藍原 ことみ","brand":"02","attr1":"rainbow","attr2":"thunder"},{"cid":"gptc588p","name":"渋谷 凛","cv":"福原 綾香","brand":"02","attr1":"sky","attr2":"wind"},{"cid":"hc2fvgwu","name":"島村 卯月","cv":"大橋 彩香","brand":"02","attr1":"moon","attr2":"dream"},{"cid":"4kh07au8","name":"城ヶ崎 美嘉","cv":"佳村 はるか","brand":"02","attr1":"rainbow","attr2":"love"},{"cid":"oi1hstc4","name":"城ヶ崎 莉嘉","cv":"山本 希望","brand":"02","attr1":"fire","attr2":"star"},{"cid":"db9uk6qe","name":"早坂 美玲","cv":"朝井 彩加","brand":"02","attr1":"thunder","attr2":"love"},{"cid":"9qlx3dtg","name":"双葉 杏","cv":"五十嵐 裕美","brand":"02","attr1":"dream","attr2":"ocean"},{"cid":"z3qfet1v","name":"星 輝子","cv":"松田 颯水","brand":"02","attr1":"star","attr2":"darkness"},{"cid":"73mxo98q","name":"本田 未央","cv":"原 紗友里","brand":"02","attr1":"dream","attr2":"light"},{"cid":"y68mooui","name":"三船 美優","cv":"原田 彩楓","brand":"02","attr1":"star","attr2":"love"},{"cid":"6wxs19ei","name":"宮本 フレデリカ","cv":"髙野 麻美","brand":"02","attr1":"rainbow","attr2":"love"},{"cid":"tf28hqiv","name":"森久保 乃々","cv":"高橋 花林","brand":"02","attr1":"flower","attr2":"moon"},{"cid":"4mdswdy8","name":"諸星 きらり","cv":"松嵜 麗","brand":"02","attr1":"sky","attr2":"star"},{"cid":"q8g7rie8","name":"伊吹 翼","cv":"Machico","brand":"03","attr1":"light","attr2":"star"},{"cid":"jdkw92f9","name":"エミリー スチュアート","cv":"郁原 ゆう","brand":"03","attr1":"flower","attr2":"wind"},{"cid":"xztjridk","name":"春日 未来","cv":"山崎 はるか","brand":"03","attr1":"flower","attr2":"dream"},{"cid":"aigvm7d2","name":"北沢 志保","cv":"雨宮 天","brand":"03","attr1":"moon","attr2":"heaven"},{"cid":"c8gldzy2","name":"島原 エレナ","cv":"角元 明日香","brand":"03","attr1":"fire","attr2":"star"},{"cid":"zwfroxbv","name":"白石 紬","cv":"南 早紀","brand":"03","attr1":"wind","attr2":"snow"},{"cid":"7ctuqimy","name":"徳川 まつり","cv":"諏訪 彩花","brand":"03","attr1":"moon","attr2":"dream"},{"cid":"h35h9zex","name":"中谷 育","cv":"原嶋 あかり","brand":"03","attr1":"rainbow","attr2":"light"},{"cid":"x5gwldyb","name":"七尾 百合子","cv":"伊藤 美来","brand":"03","attr1":"moon","attr2":"light"},{"cid":"dhf9amuf","name":"真壁 瑞希","cv":"阿部 里果","brand":"03","attr1":"wind","attr2":"love"},{"cid":"kj2hsdft","name":"松田 亜利沙","cv":"村川 梨衣","brand":"03","attr1":"heaven","attr2":"dream"},{"cid":"1g62sqan","name":"宮尾 美也","cv":"桐谷 蝶々","brand":"03","attr1":"snow","attr2":"love"},{"cid":"smbp9ibu","name":"最上 静香","cv":"田所 あずさ","brand":"03","attr1":"heaven","attr2":"rainbow"},{"cid":"o03iunzv","name":"秋月 涼","cv":"三瓶 由布子","brand":"04","attr1":"sky","attr2":"dream"},{"cid":"0ar2rvar","name":"握野 英雄","cv":"熊谷 健太郎","brand":"04","attr1":"dream","attr2":"love"},{"cid":"1mhziusz","name":"天ヶ瀬 冬馬","cv":"寺島 拓篤","brand":"04","attr1":"snow","attr2":"heaven"},{"cid":"qh9h08c0","name":"伊集院 北斗","cv":"神原 大地","brand":"04","attr1":"moon","attr2":"heaven"},{"cid":"xp8zkhxl","name":"岡村 直央","cv":"矢野 奨吾","brand":"04","attr1":"flower","attr2":"rainbow"},{"cid":"ig9p2yvy","name":"神楽 麗","cv":"永野 由祐","brand":"04","attr1":"light","attr2":"ocean"},{"cid":"8irit9s9","name":"柏木 翼","cv":"八代 拓","brand":"04","attr1":"sky","attr2":"star"},{"cid":"lsunotk3","name":"兜 大吾","cv":"浦尾 岳大","brand":"04","attr1":"sky","attr2":"snow"},{"cid":"0h8tjd7z","name":"北村 想楽","cv":"汐谷 文康","brand":"04","attr1":"sky","attr2":"darkness"},{"cid":"kgc88ipa","name":"木村 龍","cv":"濱 健人","brand":"04","attr1":"fire","attr2":"love"},{"cid":"8xq40j0m","name":"葛之葉 雨彦","cv":"笠間 淳","brand":"04","attr1":"star","attr2":"darkness"},{"cid":"0bkkgbx4","name":"古論 クリス","cv":"駒田 航","brand":"04","attr1":"ocean","attr2":"darkness"},{"cid":"ng44quiv","name":"桜庭 薫","cv":"内田 雄馬","brand":"04","attr1":"flower","attr2":"star"},{"cid":"68kbcmod","name":"信玄 誠司","cv":"増元 拓也","brand":"04","attr1":"heaven","attr2":"love"},{"cid":"hb55tguo","name":"橘 志狼","cv":"古畑 恵介","brand":"04","attr1":"flower","attr2":"moon"},{"cid":"cdymh7r7","name":"九十九 一希","cv":"比留間 俊哉","brand":"04","attr1":"sky","attr2":"ocean"},{"cid":"2kz56xvh","name":"都築 圭","cv":"土岐 隼一","brand":"04","attr1":"dream","attr2":"light"},{"cid":"ht1vo2h6","name":"天道 輝","cv":"仲村 宗悟","brand":"04","attr1":"heaven","attr2":"star"},{"cid":"wsu8p7ra","name":"姫野 かのん","cv":"村瀬 歩","brand":"04","attr1":"flower","attr2":"love"},{"cid":"ay8e1l2m","name":"御手洗 翔太","cv":"松岡 禎丞","brand":"04","attr1":"wind","attr2":"heaven"},{"cid":"zvop1lz2","name":"大崎 甘奈","cv":"黒木 ほの香","brand":"05","attr1":"flower","attr2":"light"},{"cid":"w6nuzxhj","name":"大崎 甜花","cv":"前川 涼子","brand":"05","attr1":"flower","attr2":"dream"},{"cid":"njiuc7jx","name":"風野 灯織","cv":"近藤 玲奈","brand":"05","attr1":"wind","attr2":"star"},{"cid":"tgj0mp9c","name":"桑山 千雪","cv":"芝崎 典子","brand":"05","attr1":"flower","attr2":"snow"},{"cid":"413dh2js","name":"櫻木 真乃","cv":"関根 瞳","brand":"05","attr1":"flower","attr2":"star"},{"cid":"ao9ajrjh","name":"八宮 めぐる","cv":"峯田 茉優","brand":"05","attr1":"heaven","attr2":"star"}]`;
 
-//※サーバに負荷をかけないために、わざとリニアアクセスです
-async function fetchAudiosLinear(){
-	for (const idol of idolsVoiced) {
-		logzone.addWord( idolsVoiced.length - audioBuffers.length ); //countdown
-		audioBuffers.push(
-			await fetch(idol.href_tcall).
-				then(r=>r.arrayBuffer()).
-				then(r=>audioContext.decodeAudioData(r))
-		);
+class TIdol {
+	constructor(obj){
+		this.cid = obj.cid;
+		this.name = obj.name;
+		this.cv = obj.cv;
+		let n = parseInt(obj.brand,10);
+		this.brandIndex = ( !isNaN(n) && n > 0 )? n:0;
+		this.attr1 = obj.attr1;
+		this.attr2 = obj.attr2;
 	}
+	get href_thumb(){ return uriRoot+`images/idol/${this.cid}/img_thumb.png`      }//写真
+	get href_cocos(){ return uriRoot+`images/idol/${this.cid}/img_chara_02.png`   }//共通衣装
+	get href_tcall(){ return uriRoot+`images/idol/${this.cid}/voice_01.m4a`       }//タイトルコール
+	get href_attr1(){ return uriRoot+`images/idol/attribute/ico_${this.attr1}.png`}//属性1
+	get href_attr2(){ return uriRoot+`images/idol/attribute/ico_${this.attr2}.png`}//属性2
+	get href_brand(){ return uriRoot+`images/idol/img_brand_0${this.brandIndex}.png`}//ブランド
+	get href_source(){ return uriRoot+"idol/detail.php?ch="+this.cid } //プロフィールページ
 }
 
-function debug_audio_index(n){
-	if (audioBuffers[n]) {
-		let bfsrc = audioContext.createBufferSource();
-		bfsrc.buffer = audioBuffers[n];
-		bfsrc.connect(audioContext.destination);
-		bfsrc.start();
-	}
-}
+let idolsVoiced = [];
+
+for( const obj of JSON.parse(json075) ){ idolsVoiced.push(new TIdol(obj)) }
+//覚え書き：変数 json075 をクロール結果を受け取ったものにすれば上書き更新できる
 
 window.addEventListener("load",()=>{
-	document.body.append(logzone);
-	createDatabase().then(e=>{
-		logzone.addLine(e);
-		return fetchAudiosLinear();
-	}).then( e=>{
-		logzone.addLine("READY!")
-	})
-});
+	document.getElementById("crawlerScript").textContent = crawlerScript;
+
+	//仮の情報一覧
+	const dbvtbl = document.getElementById("databaseView");
+	const dthead = dbvtbl.createTHead().insertRow(-1);
+	dthead.insertCell(-1).textContent = "写真";
+	dthead.insertCell(-1).textContent = "名前・属性・タイトルコール";
+
+	for( const idol of idolsVoiced ){
+		let anc, elm, cel, newrow = dbvtbl.insertRow(-1);
+		//1列目
+		elm = document.createElement("img");
+		elm.classList.add("snapshot");
+		elm.src = idol.href_thumb;
+		elm.alt = idol.name+" ( CV/ "+idol.cv+" )";
+		anc = document.createElement("a");
+		anc.href = idol.href_source;
+		newrow.insertCell(-1).appendChild(anc).appendChild(elm);
+		//2列目
+		cel = newrow.insertCell(-1);
+		elm = document.createElement("h3");
+		elm.textContent = idol.name;
+		cel.appendChild(elm);
+		elm = document.createElement("img");
+		elm.src = idol.href_attr1;
+		cel.appendChild(elm);
+		elm = document.createElement("img");
+		elm.src = idol.href_attr2;
+		cel.appendChild(elm);
+		elm = document.createElement("img");
+		elm.src = idol.href_brand;
+		cel.appendChild(elm);
+		cel.appendChild( document.createElement("br") );
+		elm = document.createElement("audio");
+		elm.autoplay = false;
+		elm.controls = true;
+		elm.src = idol.href_tcall;
+		cel.appendChild(elm);
+	}
+})
+
 </script>
 </head>
 
 <body>
+	<table id="databaseView"></table>
+
+	CORSポリシーの事情につき、
+	<ol>
+		<li>公式ページに移動</li>
+		<li>コンソールを開く</li>
+		<li>以下のスクリプトを叩き込む<br><textarea id="crawlerScript" readonly cols="108" rows="10"></textarea></li>
+		<li>しばらく待つ</li>
+		<li>結果のテキストを以下に入力する(今はない)</li>
+	</ol>
 </body>
 </html>
